@@ -41,6 +41,7 @@ const scenarioPaths = [
   "assets/fondos/iglesia2.png",
   "assets/fondos/mirador.png",
   "assets/fondos/plaza_de_toros.png",
+  "assets/fondos/parada.png",
 ];
 
 const STORAGE_KEYS = {
