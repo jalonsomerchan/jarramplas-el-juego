@@ -4,8 +4,9 @@ const ctx = canvas.getContext("2d");
 const hud = document.getElementById("hud");
 const scoreEl = document.getElementById("score");
 const timeEl = document.getElementById("time");
-const difficultyLabel = document.getElementById("difficultyLabel");
+const recordEl = document.getElementById("record");
 const playButton = document.getElementById("playButton");
+const jarramplasCountdownEl = document.getElementById("jarramplasCountdown");
 const scenarioOptions = document.getElementById("scenarioOptions");
 const screens = {
   start: document.getElementById("start"),
@@ -13,6 +14,8 @@ const screens = {
   select: document.getElementById("select"),
   scenario: document.getElementById("scenario"),
   tutorial: document.getElementById("tutorial"),
+  about: document.getElementById("about"),
+  pause: document.getElementById("pause"),
   result: document.getElementById("result"),
 };
 
@@ -32,16 +35,23 @@ const gameTypeConfig = {
   eviction: { label: "Hasta que me echen", shortLabel: "3 avisos", maxPeopleHits: 3, requiresPeople: true },
 };
 
-const scenarioPaths = [
-  "assets/fondos/ayuntamiento.png",
-  "assets/fondos/casa_cultura.png",
-  "assets/fondos/campo_de_futbol.png",
-  "assets/fondos/estatua_jarramplas.png",
-  "assets/fondos/fondo2.png",
-  "assets/fondos/iglesia2.png",
-  "assets/fondos/mirador.png",
-  "assets/fondos/plaza_de_toros.png",
-  "assets/fondos/parada.png", 
+const jarramplasMovementConfig = {
+  minYRatio: 0.12,
+  maxYRatio: 0.25,
+};
+
+const scenarios = [
+  { name: "Ayuntamiento", path: "assets/fondos/ayuntamiento.png" },
+  { name: "Casa de Cultura", path: "assets/fondos/casa_cultura.png" },
+  { name: "Campo de fútbol", path: "assets/fondos/campo_de_futbol.png" },
+  { name: "Estatua de Jarramplas", path: "assets/fondos/estatua_jarramplas.png" },
+  { name: "Calle", path: "assets/fondos/fondo2.png" },
+  { name: "Iglesia", path: "assets/fondos/iglesia2.png" },
+  { name: "Mirador", path: "assets/fondos/mirador.png" },
+  { name: "Plaza de toros", path: "assets/fondos/plaza_de_toros.png" },
+  { name: "Parada", path: "assets/fondos/parada.png" },
+  { name: "Fachada de Jarramplas", path: "assets/fondos/fachada_jarramplas.png" },
+  { name: "Nieve", path: "assets/fondos/nieve.png" },
 ];
 
 const STORAGE_KEYS = {
@@ -78,6 +88,8 @@ const state = {
   peopleHits: 0,
   timeLeft: 60,
   elapsed: 0,
+  totalPaused: 0,
+  pausedAt: 0,
   turnipsLeft: 20,
   jarramplasHealth: 100,
   endReason: "",
@@ -90,9 +102,11 @@ const state = {
   drag: null,
   nextPersonId: 0,
   nextPersonAt: 0,
+  scenarioIndex: 0,
+  tutorialNextScreen: "type",
 };
 
-function loadImageFrame(path) {
+function loadImageFrame(path, label = null) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve({
@@ -100,7 +114,7 @@ function loadImageFrame(path) {
       w: img.naturalWidth,
       h: img.naturalHeight,
       path,
-      name: fileLabel(path),
+      name: label || fileLabel(path),
     });
     img.onerror = () => reject(new Error(`No se pudo cargar ${path}`));
     img.src = path;
@@ -116,16 +130,16 @@ function loadImageFrames(paths) {
   return Promise.all(paths.map(loadImageFrame));
 }
 
-async function loadOptionalImage(path) {
+async function loadOptionalImage(path, label = null) {
   try {
-    return await loadImageFrame(path);
+    return await loadImageFrame(path, label);
   } catch {
     return null;
   }
 }
 
 async function loadBackgrounds() {
-  const attempts = scenarioPaths.map(loadOptionalImage);
+  const attempts = scenarios.map((scenario) => loadOptionalImage(scenario.path, scenario.name));
   return (await Promise.all(attempts)).filter(Boolean);
 }
 
@@ -177,7 +191,7 @@ function buildScenarioButtons() {
     button.type = "button";
     button.dataset.scenario = String(index);
     label.textContent = background.name;
-    meta.textContent = "Escenario";
+    meta.textContent = "";
     button.append(label, meta);
     button.addEventListener("click", () => startGame(state.pendingDifficulty, index));
     scenarioOptions.appendChild(button);
@@ -218,6 +232,17 @@ function markTutorialSeen() {
   localStorage.setItem(STORAGE_KEYS.tutorial, "1");
 }
 
+function updateJarramplasCountdown() {
+  const now = new Date();
+  let nextJarramplas = new Date(now.getFullYear(), 0, 19);
+  if (now >= nextJarramplas) {
+    nextJarramplas = new Date(now.getFullYear() + 1, 0, 19);
+  }
+  const oneDay = 24 * 60 * 60 * 1000;
+  const daysLeft = Math.ceil((nextJarramplas - now) / oneDay);
+  jarramplasCountdownEl.textContent = `Quedan ${daysLeft} días para Jarramplas`;
+}
+
 function resize() {
   const rect = app.getBoundingClientRect();
   state.w = rect.width;
@@ -236,7 +261,7 @@ function layoutJarramplas() {
   state.jarramplas.w = size;
   state.jarramplas.h = size * 1.72;
   state.jarramplas.x = Math.max(size, Math.min(state.w - size, state.jarramplas.x || state.w / 2));
-  state.jarramplas.y = Math.max(state.h * 0.055, Math.min(state.h * 0.24, state.jarramplas.y || state.h * 0.075));
+  state.jarramplas.y = Math.max(state.h * jarramplasMovementConfig.minYRatio, Math.min(state.h * jarramplasMovementConfig.maxYRatio, state.jarramplas.y || state.h * jarramplasMovementConfig.minYRatio));
   state.jarramplas.targetY = state.jarramplas.y;
 }
 
@@ -247,7 +272,7 @@ function layoutCrowd() {
 function showScreen(name) {
   Object.values(screens).forEach((screen) => screen.classList.remove("is-visible"));
   if (name) screens[name].classList.add("is-visible");
-  hud.classList.toggle("is-visible", state.mode === "playing");
+  hud.classList.toggle("is-visible", state.mode === "playing" || state.mode === "paused");
 }
 
 function chooseGameType(gameType) {
@@ -286,6 +311,7 @@ function startGame(difficulty, backgroundIndex = 0) {
   const config = difficultyConfig[difficulty];
   const type = gameTypeConfig[state.pendingGameType];
   assets.background = assets.backgrounds[backgroundIndex] || null;
+  state.scenarioIndex = backgroundIndex;
   state.mode = "playing";
   state.gameType = state.pendingGameType;
   state.difficulty = difficulty;
@@ -294,6 +320,8 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.peopleHits = 0;
   state.timeLeft = type.duration || 0;
   state.elapsed = 0;
+  state.totalPaused = 0;
+  state.pausedAt = 0;
   state.turnipsLeft = type.turnips || Infinity;
   state.jarramplasHealth = type.health || 0;
   state.endReason = "";
@@ -306,7 +334,7 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.nextPersonId = 0;
   state.nextPersonAt = performance.now() + 700;
   state.jarramplas.x = state.w / 2;
-  state.jarramplas.y = state.h * 0.075;
+  state.jarramplas.y = state.h * jarramplasMovementConfig.minYRatio;
   state.jarramplas.targetX = state.w / 2;
   state.jarramplas.targetY = state.jarramplas.y;
   state.jarramplas.vx = 0;
@@ -333,6 +361,42 @@ function endGame() {
   document.getElementById("finalHits").textContent = `${type.label} · ${difficulty.label} · Jarramplas: ${state.jarramplasHits} impactos · Gente: ${state.peopleHits} impactos`;
   document.getElementById("finalRecord").textContent = `Récord en este modo: ${best} pts`;
   showScreen("result");
+}
+
+function pauseGame() {
+  if (state.mode !== "playing") return;
+  state.mode = "paused";
+  state.pausedAt = performance.now();
+  state.drag = null;
+  showScreen("pause");
+}
+
+function resumeGame() {
+  if (state.mode !== "paused") return;
+  const now = performance.now();
+  state.totalPaused += now - state.pausedAt;
+  state.pausedAt = 0;
+  state.last = now;
+  state.mode = "playing";
+  showScreen(null);
+  hud.classList.add("is-visible");
+}
+
+function restartGame() {
+  const difficulty = state.difficulty;
+  const gameType = state.gameType;
+  const scenarioIndex = state.scenarioIndex;
+  state.pendingGameType = gameType;
+  startGame(difficulty, scenarioIndex);
+}
+
+function goHome() {
+  state.mode = "menu";
+  state.drag = null;
+  state.turnips = [];
+  state.floaters = [];
+  hud.classList.remove("is-visible");
+  showScreen("start");
 }
 
 function spawnPerson(initial = false) {
@@ -402,10 +466,31 @@ function formatHudValue() {
 
 function updateHud() {
   const type = gameTypeConfig[state.gameType];
-  const difficulty = difficultyConfig[state.difficulty];
   scoreEl.textContent = `${state.score} pts`;
   timeEl.innerHTML = `${formatHudValue()}<small>${type.shortLabel}</small>`;
-  difficultyLabel.innerHTML = `${difficulty.label}<small>${type.shortLabel}</small>`;
+  recordEl.innerHTML = `${getRecord(state.gameType, state.difficulty)} pts<small>Récord</small>`;
+}
+
+function shareText(text) {
+  const url = window.location.href.split("#")[0];
+  const fullText = `${text} ${url}`;
+  if (navigator.share) {
+    navigator.share({ title: "Juego de Jarramplas", text: fullText, url }).catch(() => {});
+    return;
+  }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(fullText).catch(() => {});
+  }
+}
+
+function shareGame() {
+  shareText("Juega al Juego de Jarramplas");
+}
+
+function shareResult() {
+  const type = gameTypeConfig[state.gameType];
+  const difficulty = difficultyConfig[state.difficulty];
+  shareText(`He conseguido ${state.score} puntos en el nivel ${difficulty.label} del tipo ${type.label} del Juego de Jarramplas`);
 }
 
 function pickJarramplasTarget(now) {
@@ -413,7 +498,7 @@ function pickJarramplasTarget(now) {
   const config = difficultyConfig[state.difficulty];
   const margin = j.w * 0.76;
   j.targetX = margin + Math.random() * Math.max(1, state.w - margin * 2);
-  j.targetY = state.h * (0.055 + Math.random() * 0.18);
+  j.targetY = state.h * (jarramplasMovementConfig.minYRatio + Math.random() * (jarramplasMovementConfig.maxYRatio - jarramplasMovementConfig.minYRatio));
   j.nextMoveAt = now + 520 + Math.random() * (1150 / config.speed);
 }
 
@@ -440,7 +525,7 @@ function updateJarramplasMotion(now, dt) {
   j.x += j.vx * dt;
   j.y += j.vy * dt;
   j.x = Math.max(j.w * 0.72, Math.min(state.w - j.w * 0.72, j.x));
-  j.y = Math.max(state.h * 0.045, Math.min(state.h * 0.25, j.y));
+  j.y = Math.max(state.h * jarramplasMovementConfig.minYRatio, Math.min(state.h * jarramplasMovementConfig.maxYRatio, j.y));
   j.walkFrame = Math.floor(now / 120) % 16;
   j.flash = Math.max(0, (j.flash || 0) - dt);
 }
@@ -483,7 +568,7 @@ function update(now) {
 
   if (state.mode === "playing") {
     const type = gameTypeConfig[state.gameType];
-    state.elapsed = (now - state.startedAt) / 1000;
+    state.elapsed = (now - state.startedAt - state.totalPaused) / 1000;
     if (state.gameType === "timed") {
       state.timeLeft = Math.max(0, type.duration - state.elapsed);
       if (state.timeLeft <= 0) endGame();
@@ -687,6 +772,22 @@ function drawJarramplas() {
   }
 }
 
+function drawTimedCountdown() {
+  if (state.mode !== "playing" || state.gameType !== "timed" || state.timeLeft > 10) return;
+  const value = Math.max(0, Math.ceil(state.timeLeft));
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = "#fff6df";
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+  ctx.lineWidth = Math.max(5, state.w * 0.025);
+  ctx.font = `950 ${Math.min(state.w * 0.48, state.h * 0.28)}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.strokeText(String(value), state.w / 2, state.h / 2);
+  ctx.fillText(String(value), state.w / 2, state.h / 2);
+  ctx.restore();
+}
+
 function render() {
   drawBackground();
   const drawables = [
@@ -695,6 +796,7 @@ function render() {
   ].sort((a, b) => a.y - b.y);
   for (const item of drawables) item.draw();
   for (const turnip of state.turnips) drawTurnip(turnip.x, turnip.y, turnip.r * 2, turnip.spin);
+  drawTimedCountdown();
 
   if (state.mode === "playing") {
     const origin = launchOrigin();
@@ -789,6 +891,7 @@ document.querySelectorAll("[data-level] span").forEach((span) => {
 
 playButton.addEventListener("click", () => {
   if (!hasSeenTutorial()) {
+    state.tutorialNextScreen = "type";
     state.mode = "tutorial";
     showScreen("tutorial");
     return;
@@ -796,8 +899,27 @@ playButton.addEventListener("click", () => {
   state.mode = "type";
   showScreen("type");
 });
+document.getElementById("howToButton").addEventListener("click", () => {
+  state.tutorialNextScreen = "start";
+  state.mode = "tutorial";
+  showScreen("tutorial");
+});
+document.getElementById("aboutButton").addEventListener("click", () => {
+  state.mode = "about";
+  showScreen("about");
+});
+document.getElementById("aboutBackButton").addEventListener("click", () => {
+  state.mode = "menu";
+  showScreen("start");
+});
+document.getElementById("shareButton").addEventListener("click", shareGame);
 document.getElementById("tutorialButton").addEventListener("click", () => {
   markTutorialSeen();
+  if (state.tutorialNextScreen === "start") {
+    state.mode = "menu";
+    showScreen("start");
+    return;
+  }
   state.mode = "type";
   showScreen("type");
 });
@@ -817,6 +939,11 @@ document.getElementById("againButton").addEventListener("click", () => {
   state.mode = "type";
   showScreen("type");
 });
+document.getElementById("shareResultButton").addEventListener("click", shareResult);
+document.getElementById("pauseButton").addEventListener("click", pauseGame);
+document.getElementById("resumeButton").addEventListener("click", resumeGame);
+document.getElementById("restartButton").addEventListener("click", restartGame);
+document.getElementById("homeButton").addEventListener("click", goHome);
 document.querySelectorAll("[data-game-type]").forEach((button) => {
   button.addEventListener("click", () => chooseGameType(button.dataset.gameType));
 });
@@ -832,6 +959,7 @@ window.addEventListener("mousemove", onPointerMove);
 window.addEventListener("mouseup", onPointerEnd);
 window.addEventListener("resize", resize);
 
+updateJarramplasCountdown();
 resize();
 loadAssets().catch((error) => {
   console.error(error);
