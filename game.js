@@ -9,8 +9,10 @@ const playButton = document.getElementById("playButton");
 const scenarioOptions = document.getElementById("scenarioOptions");
 const screens = {
   start: document.getElementById("start"),
+  type: document.getElementById("type"),
   select: document.getElementById("select"),
   scenario: document.getElementById("scenario"),
+  tutorial: document.getElementById("tutorial"),
   result: document.getElementById("result"),
 };
 
@@ -21,6 +23,29 @@ const difficultyConfig = {
   day19Evening: { label: "19 tarde", people: 6, crowdThrow: 1.12, speed: 1 },
   day20Morning: { label: "20 mañana", people: 9, crowdThrow: 0.84, speed: 1.16 },
   day20Evening: { label: "20 tarde", people: 12, crowdThrow: 0.62, speed: 1.32 },
+};
+
+const gameTypeConfig = {
+  timed: { label: "Por tiempo", shortLabel: "Tiempo", duration: 60 },
+  survival: { label: "Hasta que Jarramplas aguante", shortLabel: "Vida", health: 100 },
+  limitedTurnips: { label: "Hasta que me quede sin nabos", shortLabel: "20 nabos", turnips: 20 },
+  eviction: { label: "Hasta que me echen", shortLabel: "3 avisos", maxPeopleHits: 3, requiresPeople: true },
+};
+
+const scenarioPaths = [
+  "assets/fondos/ayuntamiento.png",
+  "assets/fondos/casa_cultura.png",
+  "assets/fondos/campo_de_futbol.png",
+  "assets/fondos/estatua_jarramplas.png",
+  "assets/fondos/fondo2.png",
+  "assets/fondos/iglesia2.png",
+  "assets/fondos/mirador.png",
+  "assets/fondos/plaza_de_toros.png",
+];
+
+const STORAGE_KEYS = {
+  records: "jarramplas.records.v1",
+  tutorial: "jarramplas.tutorialSeen.v2",
 };
 
 const assets = {
@@ -38,12 +63,11 @@ const jarramplasFramePaths = Array.from(
 );
 
 const personIds = [1, 2, 3, 4, 5, 6, 7];
-const backgroundSlots = Array.from({ length: 40 }, (_, index) => index + 1);
-const backgroundExtensions = ["png", "jpg", "jpeg", "webp"];
-const backgroundFilePattern = /\.(png|jpe?g|webp)$/i;
 
 const state = {
   mode: "menu",
+  gameType: "timed",
+  pendingGameType: "timed",
   difficulty: "day19Morning",
   pendingDifficulty: "day19Morning",
   w: 0,
@@ -52,9 +76,13 @@ const state = {
   jarramplasHits: 0,
   peopleHits: 0,
   timeLeft: 60,
+  elapsed: 0,
+  turnipsLeft: 20,
+  jarramplasHealth: 100,
+  endReason: "",
   startedAt: 0,
   last: 0,
-  jarramplas: { x: 0, y: 0, w: 112, h: 150, vx: 76, walkFrame: 0, flash: 0 },
+  jarramplas: { x: 0, y: 0, w: 112, h: 150, vx: 76, vy: 0, targetX: 0, targetY: 0, walkFrame: 0, flash: 0, nextMoveAt: 0 },
   people: [],
   turnips: [],
   floaters: [],
@@ -96,33 +124,8 @@ async function loadOptionalImage(path) {
 }
 
 async function loadBackgrounds() {
-  const paths = await listBackgroundPaths();
-  const attempts = paths.map(loadOptionalImage);
+  const attempts = scenarioPaths.map(loadOptionalImage);
   return (await Promise.all(attempts)).filter(Boolean);
-}
-
-async function listBackgroundPaths() {
-  const found = new Set();
-  try {
-    const response = await fetch("assets/fondos/");
-    const html = await response.text();
-    if (response.ok) {
-      for (const match of html.matchAll(/href=["']([^"']+)["']/gi)) {
-        const href = decodeURIComponent(match[1]);
-        if (backgroundFilePattern.test(href)) {
-          found.add(`assets/fondos/${href.split("/").pop()}`);
-        }
-      }
-    }
-  } catch {
-    // Some static servers do not expose directory listings; numbered files below keep adding backgrounds easy.
-  }
-  for (const slot of backgroundSlots) {
-    for (const ext of backgroundExtensions) {
-      found.add(`assets/fondos/fondo${slot}.${ext}`);
-    }
-  }
-  return [...found];
 }
 
 async function loadPersonGroups() {
@@ -155,7 +158,7 @@ async function loadAssets() {
   assets.people.front = people;
   assets.people.back = people;
   assets.turnips = [];
-  assets.backgrounds = backgrounds.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  assets.backgrounds = backgrounds;
   assets.background = backgrounds[Math.floor(Math.random() * backgrounds.length)] || null;
   buildScenarioButtons();
   assets.ready = true;
@@ -180,6 +183,40 @@ function buildScenarioButtons() {
   });
 }
 
+function getRecords() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.records) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function recordKey(gameType, difficulty) {
+  return `${gameType}:${difficulty}`;
+}
+
+function getRecord(gameType, difficulty) {
+  const records = getRecords();
+  return Number(records[recordKey(gameType, difficulty)] || 0);
+}
+
+function saveRecord(gameType, difficulty, score) {
+  const records = getRecords();
+  const key = recordKey(gameType, difficulty);
+  const best = Math.max(Number(records[key] || 0), score);
+  records[key] = best;
+  localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
+  return best;
+}
+
+function hasSeenTutorial() {
+  return localStorage.getItem(STORAGE_KEYS.tutorial) === "1";
+}
+
+function markTutorialSeen() {
+  localStorage.setItem(STORAGE_KEYS.tutorial, "1");
+}
+
 function resize() {
   const rect = app.getBoundingClientRect();
   state.w = rect.width;
@@ -198,7 +235,8 @@ function layoutJarramplas() {
   state.jarramplas.w = size;
   state.jarramplas.h = size * 1.72;
   state.jarramplas.x = Math.max(size, Math.min(state.w - size, state.jarramplas.x || state.w / 2));
-  state.jarramplas.y = state.h * 0.075;
+  state.jarramplas.y = Math.max(state.h * 0.055, Math.min(state.h * 0.24, state.jarramplas.y || state.h * 0.075));
+  state.jarramplas.targetY = state.jarramplas.y;
 }
 
 function layoutCrowd() {
@@ -211,8 +249,32 @@ function showScreen(name) {
   hud.classList.toggle("is-visible", state.mode === "playing");
 }
 
+function chooseGameType(gameType) {
+  if (!assets.ready) return;
+  state.pendingGameType = gameType;
+  state.mode = "select";
+  refreshLevelOptions();
+  showScreen("select");
+}
+
+function refreshLevelOptions() {
+  const type = gameTypeConfig[state.pendingGameType];
+  document.querySelectorAll("[data-level]").forEach((button) => {
+    const level = button.dataset.level;
+    const config = difficultyConfig[level];
+    const disabled = Boolean(type.requiresPeople && config.people === 0);
+    const record = getRecord(state.pendingGameType, level);
+    button.disabled = disabled;
+    button.hidden = disabled;
+    const meta = button.querySelector("span");
+    if (meta) meta.textContent = record > 0 ? `Récord ${record}` : meta.dataset.label || meta.textContent;
+  });
+}
+
 function chooseLevel(difficulty) {
   if (!assets.ready) return;
+  const type = gameTypeConfig[state.pendingGameType];
+  if (type.requiresPeople && difficultyConfig[difficulty].people === 0) return;
   state.pendingDifficulty = difficulty;
   state.mode = "scenario";
   showScreen("scenario");
@@ -221,13 +283,19 @@ function chooseLevel(difficulty) {
 function startGame(difficulty, backgroundIndex = 0) {
   if (!assets.ready) return;
   const config = difficultyConfig[difficulty];
+  const type = gameTypeConfig[state.pendingGameType];
   assets.background = assets.backgrounds[backgroundIndex] || null;
   state.mode = "playing";
+  state.gameType = state.pendingGameType;
   state.difficulty = difficulty;
   state.score = 0;
   state.jarramplasHits = 0;
   state.peopleHits = 0;
-  state.timeLeft = 60;
+  state.timeLeft = type.duration || 0;
+  state.elapsed = 0;
+  state.turnipsLeft = type.turnips || Infinity;
+  state.jarramplasHealth = type.health || 0;
+  state.endReason = "";
   state.startedAt = performance.now();
   state.last = state.startedAt;
   state.people = [];
@@ -237,21 +305,32 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.nextPersonId = 0;
   state.nextPersonAt = performance.now() + 700;
   state.jarramplas.x = state.w / 2;
-  state.jarramplas.vx = 66 + config.speed * 20;
+  state.jarramplas.y = state.h * 0.075;
+  state.jarramplas.targetX = state.w / 2;
+  state.jarramplas.targetY = state.jarramplas.y;
+  state.jarramplas.vx = 0;
+  state.jarramplas.vy = 0;
+  state.jarramplas.nextMoveAt = 0;
   state.jarramplas.flash = 0;
-  scoreEl.textContent = "0 pts";
-  timeEl.textContent = "1:00";
-  difficultyLabel.textContent = config.label;
+  updateHud();
   for (let i = 0; i < config.people; i += 1) spawnPerson(true);
   showScreen(null);
   hud.classList.add("is-visible");
 }
 
 function endGame() {
+  if (state.mode !== "playing") return;
+  if (state.gameType === "survival") {
+    state.score = Math.max(0, Math.round(1200 - state.elapsed * 10 + state.jarramplasHits * 12 - state.peopleHits * 30));
+  }
+  const best = saveRecord(state.gameType, state.difficulty, state.score);
+  const type = gameTypeConfig[state.gameType];
+  const difficulty = difficultyConfig[state.difficulty];
   state.mode = "result";
   hud.classList.remove("is-visible");
   document.getElementById("finalScore").textContent = `${state.score} pts`;
-  document.getElementById("finalHits").textContent = `Jarramplas: ${state.jarramplasHits} impactos · Gente: ${state.peopleHits} impactos`;
+  document.getElementById("finalHits").textContent = `${type.label} · ${difficulty.label} · Jarramplas: ${state.jarramplasHits} impactos · Gente: ${state.peopleHits} impactos`;
+  document.getElementById("finalRecord").textContent = `Récord en este modo: ${best} pts`;
   showScreen("result");
 }
 
@@ -306,11 +385,74 @@ function formatTime(seconds) {
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
+function launchOrigin() {
+  return {
+    x: state.w / 2,
+    y: state.h - Math.max(54, state.h * 0.08),
+  };
+}
+
+function formatHudValue() {
+  if (state.gameType === "timed") return formatTime(state.timeLeft);
+  if (state.gameType === "survival") return `${Math.max(0, Math.ceil(state.jarramplasHealth))}%`;
+  if (state.gameType === "limitedTurnips") return `${Math.max(0, state.turnipsLeft)} nabos`;
+  return `${Math.max(0, gameTypeConfig.eviction.maxPeopleHits - state.peopleHits)} avisos`;
+}
+
+function updateHud() {
+  const type = gameTypeConfig[state.gameType];
+  const difficulty = difficultyConfig[state.difficulty];
+  scoreEl.textContent = `${state.score} pts`;
+  timeEl.innerHTML = `${formatHudValue()}<small>${type.shortLabel}</small>`;
+  difficultyLabel.innerHTML = `${difficulty.label}<small>${type.shortLabel}</small>`;
+}
+
+function pickJarramplasTarget(now) {
+  const j = state.jarramplas;
+  const config = difficultyConfig[state.difficulty];
+  const margin = j.w * 0.76;
+  j.targetX = margin + Math.random() * Math.max(1, state.w - margin * 2);
+  j.targetY = state.h * (0.055 + Math.random() * 0.18);
+  j.nextMoveAt = now + 520 + Math.random() * (1150 / config.speed);
+}
+
+function updateJarramplasMotion(now, dt) {
+  const j = state.jarramplas;
+  const config = difficultyConfig[state.difficulty];
+  if (!j.nextMoveAt || now > j.nextMoveAt || Math.hypot(j.targetX - j.x, j.targetY - j.y) < 10) {
+    pickJarramplasTarget(now);
+  }
+  const dx = j.targetX - j.x;
+  const dy = j.targetY - j.y;
+  const accel = 4.8 + config.speed * 1.8;
+  j.vx += dx * accel * dt;
+  j.vy += dy * accel * dt;
+  const damping = Math.pow(0.08, dt);
+  j.vx *= damping;
+  j.vy *= damping;
+  const maxSpeed = 118 + config.speed * 42;
+  const speed = Math.hypot(j.vx, j.vy);
+  if (speed > maxSpeed) {
+    j.vx = (j.vx / speed) * maxSpeed;
+    j.vy = (j.vy / speed) * maxSpeed;
+  }
+  j.x += j.vx * dt;
+  j.y += j.vy * dt;
+  j.x = Math.max(j.w * 0.72, Math.min(state.w - j.w * 0.72, j.x));
+  j.y = Math.max(state.h * 0.045, Math.min(state.h * 0.25, j.y));
+  j.walkFrame = Math.floor(now / 120) % 16;
+  j.flash = Math.max(0, (j.flash || 0) - dt);
+}
+
 function launchTurnip(from, to, owner) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const power = Math.min(Math.hypot(dx, dy), Math.min(state.w, state.h) * 0.62);
   if (power < 20) return;
+  if (owner === "player" && state.gameType === "limitedTurnips") {
+    if (state.turnipsLeft <= 0) return;
+    state.turnipsLeft -= 1;
+  }
   const speed = owner === "player" ? 760 : 365 + Math.random() * 70;
   const angle = Math.atan2(dy, dx);
   state.turnips.push({
@@ -323,6 +465,7 @@ function launchTurnip(from, to, owner) {
     owner,
     hit: false,
   });
+  updateHud();
 }
 
 function rectCircleHit(rect, circle) {
@@ -338,18 +481,17 @@ function update(now) {
   state.last = now;
 
   if (state.mode === "playing") {
-    state.timeLeft = Math.max(0, 60 - (now - state.startedAt) / 1000);
-    timeEl.textContent = formatTime(state.timeLeft);
-    if (state.timeLeft <= 0) endGame();
+    const type = gameTypeConfig[state.gameType];
+    state.elapsed = (now - state.startedAt) / 1000;
+    if (state.gameType === "timed") {
+      state.timeLeft = Math.max(0, type.duration - state.elapsed);
+      if (state.timeLeft <= 0) endGame();
+    }
+    if (state.mode !== "playing") return;
+    updateHud();
 
     const j = state.jarramplas;
-    j.x += j.vx * dt;
-    if (j.x < j.w * 0.72 || j.x > state.w - j.w * 0.72) {
-      j.vx *= -1;
-      j.x = Math.max(j.w * 0.72, Math.min(state.w - j.w * 0.72, j.x));
-    }
-    j.walkFrame = Math.floor(now / 120) % 16;
-    j.flash = Math.max(0, (j.flash || 0) - dt);
+    updateJarramplasMotion(now, dt);
     const config = difficultyConfig[state.difficulty];
     if (state.people.length < config.people && now > state.nextPersonAt) {
       spawnPerson(false);
@@ -389,8 +531,11 @@ function update(now) {
             turnip.hit = true;
             state.peopleHits += 1;
             state.score = Math.max(0, state.score - 5);
-            scoreEl.textContent = `${state.score} pts`;
             addFloater("-5", person.x, person.y - person.h * 0.72, "#ff8f77");
+            if (state.gameType === "eviction" && state.peopleHits >= type.maxPeopleHits) {
+              state.endReason = "expulsado";
+              endGame();
+            }
             break;
           }
         }
@@ -402,13 +547,27 @@ function update(now) {
         if (turnip.owner === "player") {
           state.jarramplasHits += 1;
           j.flash = 0.22;
-          state.score += 10;
-          scoreEl.textContent = `${state.score} pts`;
-          addFloater("+10", j.x, j.y + j.h * 0.18, "#f2df70");
+          if (state.gameType === "survival") {
+            state.jarramplasHealth = Math.max(0, state.jarramplasHealth - 10);
+            const gain = Math.max(1, Math.round(40 - state.elapsed * 0.35));
+            state.score += gain;
+            addFloater(`+${gain}`, j.x, j.y + j.h * 0.18, "#f2df70");
+            if (state.jarramplasHealth <= 0) {
+              state.endReason = "jarramplas";
+              endGame();
+            }
+          } else {
+            state.score += 10;
+            addFloater("+10", j.x, j.y + j.h * 0.18, "#f2df70");
+          }
         }
       }
     }
     state.turnips = state.turnips.filter((t) => !t.hit && t.x > -90 && t.x < state.w + 90 && t.y > -120 && t.y < state.h + 120);
+    if (state.gameType === "limitedTurnips" && state.turnipsLeft <= 0 && !state.turnips.some((t) => t.owner === "player")) {
+      state.endReason = "sin nabos";
+      endGame();
+    }
   }
 
   for (const floater of state.floaters) {
@@ -510,6 +669,21 @@ function drawJarramplas() {
     drawSprite(frame, j.x, j.y + j.h, j.h, false, Math.min(0.75, j.flash * 3.4));
     ctx.restore();
   }
+  if (state.mode === "playing" && state.gameType === "survival") {
+    const w = j.w * 0.9;
+    const h = 9;
+    const x = j.x - w / 2;
+    const y = j.y + 8;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(x, y, w, h);
+    ctx.stroke();
+    ctx.fillStyle = state.jarramplasHealth > 35 ? "#5dbb63" : "#d93c2f";
+    ctx.fillRect(x + 1, y + 1, (w - 2) * Math.max(0, state.jarramplasHealth / 100), h - 2);
+    ctx.restore();
+  }
 }
 
 function render() {
@@ -520,6 +694,19 @@ function render() {
   ].sort((a, b) => a.y - b.y);
   for (const item of drawables) item.draw();
   for (const turnip of state.turnips) drawTurnip(turnip.x, turnip.y, turnip.r * 2, turnip.spin);
+
+  if (state.mode === "playing") {
+    const origin = launchOrigin();
+    const size = Math.max(34, Math.min(state.w, state.h) * 0.085);
+    ctx.save();
+    ctx.globalAlpha = state.gameType === "limitedTurnips" && state.turnipsLeft <= 0 ? 0.38 : 1;
+    ctx.fillStyle = "rgba(0,0,0,0.34)";
+    ctx.beginPath();
+    ctx.ellipse(origin.x, origin.y + size * 0.28, size * 0.48, size * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawTurnip(origin.x, origin.y, size, 0);
+    ctx.restore();
+  }
 
   if (state.drag) {
     ctx.strokeStyle = "rgba(255, 246, 223, 0.74)";
@@ -567,16 +754,16 @@ function pointerPos(event) {
 }
 
 function launchStartFor(point) {
-  return {
-    x: Math.max(24, Math.min(state.w - 24, point.x)),
-    y: state.h - Math.max(44, state.h * 0.07),
-  };
+  return launchOrigin();
 }
 
 function onPointerStart(event) {
   if (state.mode !== "playing") return;
   const p = pointerPos(event);
-  if (p.y < state.h * 0.58) return;
+  const origin = launchOrigin();
+  const grabRadius = Math.max(56, Math.min(state.w, state.h) * 0.16);
+  if (Math.hypot(p.x - origin.x, p.y - origin.y) > grabRadius) return;
+  if (state.gameType === "limitedTurnips" && state.turnipsLeft <= 0) return;
   event.preventDefault();
   state.drag = { start: launchStartFor(p), current: p };
 }
@@ -595,21 +782,42 @@ function onPointerEnd(event) {
   launchTurnip(drag.start, drag.current, "player");
 }
 
-playButton.addEventListener("click", () => {
-  state.mode = "select";
-  showScreen("select");
+document.querySelectorAll("[data-level] span").forEach((span) => {
+  span.dataset.label = span.textContent;
 });
-document.getElementById("backButton").addEventListener("click", () => {
+
+playButton.addEventListener("click", () => {
+  if (!hasSeenTutorial()) {
+    state.mode = "tutorial";
+    showScreen("tutorial");
+    return;
+  }
+  state.mode = "type";
+  showScreen("type");
+});
+document.getElementById("tutorialButton").addEventListener("click", () => {
+  markTutorialSeen();
+  state.mode = "type";
+  showScreen("type");
+});
+document.getElementById("typeBackButton").addEventListener("click", () => {
   state.mode = "menu";
   showScreen("start");
+});
+document.getElementById("backButton").addEventListener("click", () => {
+  state.mode = "type";
+  showScreen("type");
 });
 document.getElementById("levelBackButton").addEventListener("click", () => {
   state.mode = "select";
   showScreen("select");
 });
 document.getElementById("againButton").addEventListener("click", () => {
-  state.mode = "select";
-  showScreen("select");
+  state.mode = "type";
+  showScreen("type");
+});
+document.querySelectorAll("[data-game-type]").forEach((button) => {
+  button.addEventListener("click", () => chooseGameType(button.dataset.gameType));
 });
 document.querySelectorAll("[data-level]").forEach((button) => {
   button.addEventListener("click", () => chooseLevel(button.dataset.level));

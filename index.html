@@ -88,6 +88,15 @@
       backdrop-filter: blur(10px);
     }
 
+    .pill small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
     .pill:nth-child(2) {
       justify-self: center;
       color: var(--gold);
@@ -201,6 +210,18 @@
       font-size: 15px;
     }
 
+    .tutorial {
+      display: grid;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .tutorial strong {
+      color: var(--ink);
+    }
+
     #result .menu {
       text-align: center;
     }
@@ -228,8 +249,21 @@
     <section class="screen is-visible" id="start">
       <div class="menu">
         <h1>Jarramplas</h1>
-        <p class="tagline">Nabos al tambor, puntería fina y sesenta segundos de fiesta.</p>
+        <p class="tagline">Nabos al tambor, puntería fina y fiesta en Piornal.</p>
         <button id="playButton" type="button">Jugar</button>
+      </div>
+    </section>
+
+    <section class="screen" id="type">
+      <div class="menu">
+        <h2>Tipo de partida</h2>
+        <div class="options">
+          <button type="button" data-game-type="timed">Por tiempo <span>60 s</span></button>
+          <button type="button" data-game-type="survival">Hasta que Jarramplas aguante <span>Vida</span></button>
+          <button type="button" data-game-type="limitedTurnips">Hasta que me quede sin nabos <span>20 nabos</span></button>
+          <button type="button" data-game-type="eviction">Hasta que me echen <span>3 fallos</span></button>
+        </div>
+        <button class="secondary" id="typeBackButton" type="button">Volver</button>
       </div>
     </section>
 
@@ -255,16 +289,29 @@
       </div>
     </section>
 
+    <section class="screen" id="tutorial">
+      <div class="menu">
+        <h2>Cómo jugar</h2>
+        <div class="tutorial">
+          <p><strong>Arrastra el nabo fijo de abajo</strong>, apunta hacia Jarramplas y suelta para lanzar.</p>
+          <p>Dar a Jarramplas suma. Dar a la gente penaliza, y en algunas partidas puede terminar la ronda.</p>
+          <p>Cada tipo de partida tiene su propio récord por nivel.</p>
+        </div>
+        <button id="tutorialButton" type="button">Entendido</button>
+      </div>
+    </section>
+
     <section class="screen" id="result">
       <div class="menu">
         <h2>Puntuación</h2>
         <div class="scoreline" id="finalScore">0</div>
         <p class="tagline" id="finalHits">Jarramplas: 0 · Gente: 0</p>
+        <p class="tagline" id="finalRecord">Récord: 0</p>
         <button id="againButton" type="button">Otra partida</button>
       </div>
     </section>
   </div>
 
-  <script src="game.js?v=20260429-7"></script>
+  <script src="game.js?v=20260429-8"></script>
 </body>
 </html>
