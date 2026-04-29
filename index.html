@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Jarramplas Throw</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #fff6df;
+      --muted: #cbbf9f;
+      --red: #d93c2f;
+      --green: #5dbb63;
+      --gold: #f2bb3d;
+      --panel: rgba(20, 24, 25, 0.78);
+      --line: rgba(255, 255, 255, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #131614;
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      touch-action: none;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: #090b0b;
+    }
+
+    #app {
+      position: relative;
+      width: min(100vw, 430px);
+      height: 100dvh;
+      overflow: hidden;
+      background: #131614;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 26px 90px rgba(0, 0, 0, 0.55);
+    }
+
+    #game {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #202624;
+    }
+
+    .hud {
+      position: absolute;
+      top: max(10px, env(safe-area-inset-top));
+      left: 10px;
+      right: 10px;
+      z-index: 3;
+      display: none;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      font-weight: 800;
+      text-shadow: 0 2px 3px rgba(0, 0, 0, 0.8);
+    }
+
+    .hud.is-visible {
+      display: grid;
+    }
+
+    .pill {
+      min-width: 74px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(9, 12, 12, 0.62);
+      font-size: clamp(15px, 4vw, 18px);
+      line-height: 1;
+      white-space: nowrap;
+      backdrop-filter: blur(10px);
+    }
+
+    .pill:nth-child(2) {
+      justify-self: center;
+      color: var(--gold);
+    }
+
+    .pill:last-child {
+      justify-self: end;
+      color: #dcf8db;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: none;
+      place-items: center;
+      padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+      background: linear-gradient(rgba(12, 14, 13, 0.18), rgba(12, 14, 13, 0.76));
+    }
+
+    .screen.is-visible {
+      display: grid;
+    }
+
+    .menu {
+      width: min(420px, 100%);
+      margin-top: auto;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+      backdrop-filter: blur(14px);
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(34px, 11.8vw, 58px);
+      line-height: 0.92;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      text-shadow: 0 5px 0 #64180f, 0 10px 30px rgba(0, 0, 0, 0.72);
+      overflow-wrap: anywhere;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: clamp(25px, 8vw, 34px);
+      line-height: 1;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .tagline {
+      margin: 12px 0 18px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    button {
+      width: 100%;
+      min-height: 52px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--red);
+      color: white;
+      font: inherit;
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25), 0 10px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    button:active {
+      transform: translateY(2px);
+      box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 5px 14px rgba(0, 0, 0, 0.32);
+    }
+
+    .options {
+      display: grid;
+      gap: 10px;
+    }
+
+    .options button {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      padding: 0 14px;
+      text-align: left;
+      background: #2f6c68;
+      font-size: 17px;
+    }
+
+    .options span {
+      justify-self: end;
+      color: #f9e6aa;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .secondary {
+      margin-top: 10px;
+      background: #3a3a36;
+      font-size: 15px;
+    }
+
+    #result .menu {
+      text-align: center;
+    }
+
+    .scoreline {
+      margin: 10px 0 16px;
+      color: var(--gold);
+      font-size: clamp(42px, 15vw, 72px);
+      font-weight: 950;
+      line-height: 1;
+      text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game" aria-label="Juego de Jarramplas"></canvas>
+
+    <div class="hud" id="hud">
+      <div class="pill" id="score">0 pts</div>
+      <div class="pill" id="time">1:00</div>
+      <div class="pill" id="difficultyLabel">Fácil</div>
+    </div>
+
+    <section class="screen is-visible" id="start">
+      <div class="menu">
+        <h1>Jarramplas</h1>
+        <p class="tagline">Nabos al tambor, puntería fina y sesenta segundos de fiesta.</p>
+        <button id="playButton" type="button">Jugar</button>
+      </div>
+    </section>
+
+    <section class="screen" id="select">
+      <div class="menu">
+        <h2>Nivel</h2>
+        <div class="options">
+          <button type="button" data-level="day18Evening">18 por la tarde <span>Sin gente</span></button>
+          <button type="button" data-level="day19Morning">19 por la mañana <span>Fácil</span></button>
+          <button type="button" data-level="day19Evening">19 por la tarde <span>Medio</span></button>
+          <button type="button" data-level="day20Morning">20 por la mañana <span>Difícil</span></button>
+          <button type="button" data-level="day20Evening">20 por la tarde <span>Extremo</span></button>
+        </div>
+        <button class="secondary" id="backButton" type="button">Volver</button>
+      </div>
+    </section>
+
+    <section class="screen" id="scenario">
+      <div class="menu">
+        <h2>Escenario</h2>
+        <div class="options" id="scenarioOptions"></div>
+        <button class="secondary" id="levelBackButton" type="button">Volver</button>
+      </div>
+    </section>
+
+    <section class="screen" id="result">
+      <div class="menu">
+        <h2>Puntuación</h2>
+        <div class="scoreline" id="finalScore">0</div>
+        <p class="tagline" id="finalHits">Jarramplas: 0 · Gente: 0</p>
+        <button id="againButton" type="button">Otra partida</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="game.js?v=20260429-7"></script>
+</body>
+</html>
