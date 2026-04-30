@@ -5,6 +5,9 @@ const hud = document.getElementById("hud");
 const scoreEl = document.getElementById("score");
 const timeEl = document.getElementById("time");
 const recordEl = document.getElementById("record");
+const loadingScreen = document.getElementById("loading");
+const loadingBar = document.getElementById("loadingBar");
+const loadingProgress = loadingScreen?.querySelector(".loading-bar");
 const playButton = document.getElementById("playButton");
 const jarramplasCountdownEl = document.getElementById("jarramplasCountdown");
 const scenarioOptions = document.getElementById("scenarioOptions");
@@ -83,11 +86,18 @@ const assets = {
 };
 
 const jarramplasFramePaths = Array.from(
-  { length: 16 },
+  { length: 11 },
   (_, index) => `assets/jarramplas/frames/frame_${String(index + 1).padStart(3, "0")}.png`
 );
 
-const personIds = [1, 2, 3, 4, 5, 6, 7];
+const personIds = [1, 2, 3, 4, 5, 6];
+const personFrameRoots = ["assets/personas/frames", "assets/personajes/frames"];
+const loadingAssetEstimate = jarramplasFramePaths.length + personFrameRoots.length + (personIds.length * 6) + scenarios.length;
+
+const loadingState = {
+  loaded: 0,
+  total: loadingAssetEstimate,
+};
 
 const state = {
   mode: "menu",
@@ -121,6 +131,17 @@ const state = {
   tutorialNextScreen: "type",
 };
 
+function updateLoadingBar(forcePercent = null) {
+  const percent = forcePercent ?? Math.min(99, Math.round((loadingState.loaded / loadingState.total) * 100));
+  if (loadingBar) loadingBar.style.width = `${percent}%`;
+  if (loadingProgress) loadingProgress.setAttribute("aria-valuenow", String(percent));
+}
+
+function markAssetLoaded() {
+  loadingState.loaded += 1;
+  updateLoadingBar();
+}
+
 function loadImageFrame(path, label = null) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -132,6 +153,14 @@ function loadImageFrame(path, label = null) {
       name: label || fileLabel(path),
     });
     img.onerror = () => reject(new Error(`No se pudo cargar ${path}`));
+    img.onload = ((onload) => () => {
+      markAssetLoaded();
+      onload();
+    })(img.onload);
+    img.onerror = ((onerror) => () => {
+      markAssetLoaded();
+      onerror();
+    })(img.onerror);
     img.src = path;
   });
 }
@@ -158,17 +187,29 @@ async function loadBackgrounds() {
   return (await Promise.all(attempts)).filter(Boolean);
 }
 
+async function findPersonFrameRoot() {
+  for (const root of personFrameRoots) {
+    const testFrame = await loadOptionalImage(`${root}/persona1/1.png`);
+    if (testFrame) return root;
+  }
+  return personFrameRoots[0];
+}
+
 async function loadPersonGroups() {
+  const personFrameRoot = await findPersonFrameRoot();
   const groups = await Promise.all(personIds.map(async (id) => {
-    const [walk, idle, throwOne, throwTwo] = await loadImageFrames([
-      `assets/personajes/frames/p${id}_andando.png`,
-      `assets/personajes/frames/p${id}_parado.png`,
-      `assets/personajes/frames/p${id}_tirando1.png`,
-      `assets/personajes/frames/p${id}_tirando2.png`,
+    const frame = (frameId) => loadImageFrame(`${personFrameRoot}/persona${id}/${frameId}.png`, `persona ${id} frame ${frameId}`);
+    const [walkOne, walkTwo, walkThree, throwOne, throwTwo, throwThree] = await Promise.all([
+      frame(1),
+      frame(2),
+      frame(3),
+      frame(4),
+      frame(5),
+      frame(6),
     ]);
     return {
-      walk: [walk, idle],
-      throw: [throwOne, throwTwo],
+      walk: [walkOne, walkTwo, walkThree],
+      throw: [throwOne, throwTwo, throwThree],
       turnips: [],
     };
   }));
@@ -178,6 +219,7 @@ async function loadPersonGroups() {
 async function loadAssets() {
   playButton.disabled = true;
   playButton.textContent = "Cargando";
+  updateLoadingBar(0);
   const [jarramplas, people, backgrounds] = await Promise.all([
     loadImageFrames(jarramplasFramePaths),
     loadPersonGroups(),
@@ -192,8 +234,12 @@ async function loadAssets() {
   assets.background = backgrounds[Math.floor(Math.random() * backgrounds.length)] || null;
   buildScenarioButtons();
   assets.ready = true;
+  updateLoadingBar(100);
   playButton.disabled = false;
   playButton.textContent = "Jugar";
+  loadingScreen.classList.remove("is-visible");
+  state.mode = "menu";
+  showScreen("start");
 }
 
 function buildScenarioButtons() {
@@ -451,6 +497,7 @@ function spawnPerson(initial = false) {
     animT: Math.random() * 4,
     throwTimer: 0.5 + Math.random() * 1.2,
     throwAnim: 0,
+    throwT: 0,
   };
   updatePersonFacing(person);
   state.people.push(person);
@@ -642,12 +689,14 @@ function update(now) {
       person.animT += dt * 8;
       person.throwTimer -= dt;
       person.throwAnim = Math.max(0, person.throwAnim - dt);
+      person.throwT = person.throwAnim > 0 ? person.throwT + dt * 10 : 0;
       person.x += person.vx * dt;
       person.y += (person.targetY - person.y) * dt * 0.55;
       updatePersonFacing(person);
       if (person.throwTimer <= 0) {
         person.throwTimer = config.crowdThrow + Math.random() * 1.35;
-        person.throwAnim = 0.38;
+        person.throwAnim = 0.42;
+        person.throwT = 0;
         launchTurnip(
           { x: person.x, y: person.y - person.h * 0.55 },
           { x: j.x + (Math.random() - 0.5) * j.w * 0.45, y: j.y + j.h * 0.38 },
@@ -799,7 +848,8 @@ function drawPerson(person) {
   const group = groups[person.groupId % Math.max(1, groups.length)];
   if (!group) return;
   const anim = person.throwAnim > 0 ? group.throw : group.walk;
-  const frame = anim[Math.floor(person.animT) % anim.length];
+  const frameT = person.throwAnim > 0 ? person.throwT : person.animT;
+  const frame = anim[Math.floor(frameT) % anim.length];
   const y = person.y + Math.sin(person.animT * 0.7) * 2;
   ctx.fillStyle = "rgba(0,0,0,0.32)";
   ctx.beginPath();

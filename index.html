@@ -57,6 +57,82 @@
       background: #202624;
     }
 
+    .loading-screen {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      display: grid;
+      place-items: center;
+      padding: max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom));
+      background:
+        radial-gradient(circle at 50% 22%, rgba(242, 187, 61, 0.2), transparent 34%),
+        linear-gradient(180deg, #101412 0%, #070909 100%);
+    }
+
+    .loading-screen:not(.is-visible) {
+      display: none;
+    }
+
+    .loading-content {
+      width: min(320px, 100%);
+      display: grid;
+      justify-items: center;
+      gap: 18px;
+      text-align: center;
+    }
+
+    .loading-symbol {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: clamp(48px, 18vw, 76px);
+      font-weight: 900;
+      letter-spacing: 0;
+      color: rgba(255, 246, 223, 0.34);
+      text-shadow: 0 0 0 rgba(242, 187, 61, 0);
+      animation: loadingGlow 1.15s ease-in-out infinite;
+    }
+
+    .loading-message {
+      color: var(--ink);
+      font-size: clamp(20px, 6vw, 27px);
+      font-weight: 900;
+      line-height: 1;
+      text-transform: uppercase;
+      text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+    }
+
+    .loading-bar {
+      width: 100%;
+      height: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.42);
+    }
+
+    .loading-bar-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--red), var(--gold), var(--green));
+      box-shadow: 0 0 18px rgba(242, 187, 61, 0.52);
+      transition: width 0.22s ease;
+    }
+
+    @keyframes loadingGlow {
+      0%,
+      100% {
+        color: rgba(255, 246, 223, 0.34);
+        text-shadow: 0 0 0 rgba(242, 187, 61, 0);
+      }
+
+      45%,
+      58% {
+        color: #fff6df;
+        text-shadow: 0 0 10px rgba(242, 187, 61, 0.92), 0 0 28px rgba(217, 60, 47, 0.42);
+      }
+    }
+
     .hud {
       position: absolute;
       top: max(10px, env(safe-area-inset-top));
@@ -279,6 +355,16 @@
   <div id="app">
     <canvas id="game" aria-label="Juego de Jarramplas"></canvas>
 
+    <section class="loading-screen is-visible" id="loading" aria-live="polite">
+      <div class="loading-content">
+        <div class="loading-symbol" aria-hidden="true">(/\)</div>
+        <p class="loading-message">Cargando...</p>
+        <div class="loading-bar" role="progressbar" aria-label="Cargando juego" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="loading-bar-fill" id="loadingBar"></div>
+        </div>
+      </div>
+    </section>
+
     <div class="hud" id="hud">
       <div class="pill" id="score">0 pts</div>
       <div class="pill" id="time">1:00</div>
@@ -286,7 +372,7 @@
       <button class="hud-button" id="pauseButton" type="button" aria-label="Menú">☰</button>
     </div>
 
-    <section class="screen is-visible" id="start">
+    <section class="screen" id="start">
       <div class="menu">
         <h1>Jarramplas</h1>
         <h2>El Juego</h2>
