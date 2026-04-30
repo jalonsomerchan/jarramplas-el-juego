@@ -125,6 +125,7 @@ const state = {
   floaters: [],
   particles: [],
   drag: null,
+  hasPressedGameWindow: false,
   nextPersonId: 0,
   nextPersonAt: 0,
   scenarioIndex: 0,
@@ -406,6 +407,7 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.floaters = [];
   state.particles = [];
   state.drag = null;
+  state.hasPressedGameWindow = false;
   state.nextPersonId = 0;
   state.nextPersonAt = performance.now() + 700;
   state.jarramplas.x = state.w / 2;
@@ -813,6 +815,73 @@ function drawTurnip(x, y, size, spin = 0) {
   ctx.restore();
 }
 
+function drawRoundedRect(x, y, w, h, radius) {
+  const r = Math.min(radius, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawLaunchHint(origin, turnipSize) {
+  const text = "Arrastra el nabo hacia adelante para lanzarlo";
+  const maxWidth = Math.min(state.w - 32, 310);
+  const fontSize = Math.max(15, Math.min(18, state.w * 0.042));
+  const lineHeight = fontSize * 1.25;
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+
+  ctx.save();
+  ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
+  for (const word of words) {
+    const nextLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(nextLine).width > maxWidth - 28 && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = nextLine;
+    }
+  }
+  if (line) lines.push(line);
+
+  const boxW = Math.min(maxWidth, Math.max(...lines.map((item) => ctx.measureText(item).width)) + 28);
+  const boxH = lines.length * lineHeight + 18;
+  const x = Math.max(16, Math.min(state.w - boxW - 16, origin.x - boxW / 2));
+  const y = Math.max(58, origin.y - turnipSize * 0.92 - boxH);
+  const pointerX = origin.x;
+  const pointerY = y + boxH + 9;
+
+  ctx.fillStyle = "rgba(28, 22, 16, 0.82)";
+  ctx.strokeStyle = "rgba(255, 246, 223, 0.78)";
+  ctx.lineWidth = 1.5;
+  drawRoundedRect(x, y, boxW, boxH, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(pointerX - 9, y + boxH - 1);
+  ctx.lineTo(pointerX + 9, y + boxH - 1);
+  ctx.lineTo(pointerX, pointerY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#fff6df";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  lines.forEach((item, index) => {
+    ctx.fillText(item, x + boxW / 2, y + 12 + lineHeight * (index + 0.5));
+  });
+  ctx.restore();
+}
+
 function drawBackground() {
   ctx.clearRect(0, 0, state.w, state.h);
   if (assets.background) {
@@ -935,6 +1004,7 @@ function render() {
     ctx.ellipse(origin.x, origin.y + size * 0.28, size * 0.48, size * 0.13, 0, 0, Math.PI * 2);
     ctx.fill();
     drawTurnip(origin.x, origin.y, size, 0);
+    if (!state.hasPressedGameWindow) drawLaunchHint(origin, size);
     ctx.restore();
   }
 
@@ -989,6 +1059,7 @@ function launchStartFor(point) {
 
 function onPointerStart(event) {
   if (state.mode !== "playing") return;
+  state.hasPressedGameWindow = true;
   const p = pointerPos(event);
   const origin = launchOrigin();
   const grabRadius = Math.max(56, Math.min(state.w, state.h) * 0.16);
