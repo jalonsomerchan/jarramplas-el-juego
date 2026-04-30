@@ -21,11 +21,11 @@ const screens = {
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 const difficultyConfig = {
-  day18Evening: { label: "18 tarde", people: 0, crowdThrow: 1.8, speed: 0.8 },
-  day19Morning: { label: "19 mañana", people: 4, crowdThrow: 1.45, speed: 0.86 },
-  day19Evening: { label: "19 tarde", people: 6, crowdThrow: 1.12, speed: 1 },
-  day20Morning: { label: "20 mañana", people: 9, crowdThrow: 0.84, speed: 1.16 },
-  day20Evening: { label: "20 tarde", people: 12, crowdThrow: 0.62, speed: 1.32 },
+  day18Evening: { label: "18 por la tarde", shareLabel: "18 por la tarde", meta: "Sin gente", people: 0, crowdThrow: 1.8, speed: 0.8 },
+  day19Morning: { label: "19 por la mañana", shareLabel: "19 por la mañana", meta: "Fácil", people: 4, crowdThrow: 1.45, speed: 0.86 },
+  day19Evening: { label: "19 por la tarde", shareLabel: "19 por la tarde", meta: "Medio", people: 6, crowdThrow: 1.12, speed: 1 },
+  day20Morning: { label: "20 por la mañana", shareLabel: "20 por la mañana", meta: "Difícil", people: 9, crowdThrow: 0.84, speed: 1.16 },
+  day20Evening: { label: "20 por la tarde", shareLabel: "20 por la tarde", meta: "Extremo", people: 12, crowdThrow: 0.62, speed: 1.32 },
 };
 
 const gameTypeConfig = {
@@ -38,6 +38,20 @@ const gameTypeConfig = {
 const jarramplasMovementConfig = {
   minYRatio: 0.12,
   maxYRatio: 0.25,
+};
+
+const impactEffectConfig = {
+  particleCount: 18,
+  sparkColors: ["#fff6df", "#f2bb3d", "#efe1c1", "#5eb356"],
+  playerBurstColor: "#f2bb3d",
+  crowdBurstColor: "#efe1c1",
+  duration: 0.46,
+};
+
+const shareTextConfig = {
+  gameTitle: "Juego de Jarramplas",
+  gameShareText: "Juega al Juego de Jarramplas",
+  resultTemplate: "He conseguido {points} puntos en el nivel {level} del tipo {type} del Juego de Jarramplas",
 };
 
 const scenarios = [
@@ -99,6 +113,7 @@ const state = {
   people: [],
   turnips: [],
   floaters: [],
+  particles: [],
   drag: null,
   nextPersonId: 0,
   nextPersonAt: 0,
@@ -195,6 +210,19 @@ function buildScenarioButtons() {
     button.append(label, meta);
     button.addEventListener("click", () => startGame(state.pendingDifficulty, index));
     scenarioOptions.appendChild(button);
+  });
+}
+
+function applyLevelLabels() {
+  document.querySelectorAll("[data-level]").forEach((button) => {
+    const config = difficultyConfig[button.dataset.level];
+    if (!config) return;
+    const meta = button.querySelector("span");
+    button.firstChild.textContent = `${config.label} `;
+    if (meta) {
+      meta.textContent = config.meta;
+      meta.dataset.label = config.meta;
+    }
   });
 }
 
@@ -330,6 +358,7 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.people = [];
   state.turnips = [];
   state.floaters = [];
+  state.particles = [];
   state.drag = null;
   state.nextPersonId = 0;
   state.nextPersonAt = performance.now() + 700;
@@ -395,6 +424,7 @@ function goHome() {
   state.drag = null;
   state.turnips = [];
   state.floaters = [];
+  state.particles = [];
   hud.classList.remove("is-visible");
   showScreen("start");
 }
@@ -443,6 +473,25 @@ function addFloater(text, x, y, color) {
   state.floaters.push({ text, x, y, color, life: 0.82, vy: -58 });
 }
 
+function addJarramplasImpact(x, y, owner) {
+  const baseColor = owner === "player" ? impactEffectConfig.playerBurstColor : impactEffectConfig.crowdBurstColor;
+  for (let i = 0; i < impactEffectConfig.particleCount; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 70 + Math.random() * 210;
+    const color = impactEffectConfig.sparkColors[i % impactEffectConfig.sparkColors.length];
+    state.particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 25,
+      r: 2.5 + Math.random() * 4,
+      color,
+      life: impactEffectConfig.duration * (0.72 + Math.random() * 0.55),
+      maxLife: impactEffectConfig.duration,
+    });
+  }
+}
+
 function formatTime(seconds) {
   const total = Math.ceil(seconds);
   const minutes = Math.floor(total / 60);
@@ -475,7 +524,7 @@ function shareText(text) {
   const url = window.location.href.split("#")[0];
   const fullText = `${text} ${url}`;
   if (navigator.share) {
-    navigator.share({ title: "Juego de Jarramplas", text: fullText, url }).catch(() => {});
+    navigator.share({ title: shareTextConfig.gameTitle, text: fullText, url }).catch(() => {});
     return;
   }
   if (navigator.clipboard) {
@@ -484,13 +533,18 @@ function shareText(text) {
 }
 
 function shareGame() {
-  shareText("Juega al Juego de Jarramplas");
+  shareText(shareTextConfig.gameShareText);
 }
 
 function shareResult() {
   const type = gameTypeConfig[state.gameType];
   const difficulty = difficultyConfig[state.difficulty];
-  shareText(`He conseguido ${state.score} puntos en el nivel ${difficulty.label} del tipo ${type.label} del Juego de Jarramplas`);
+  shareText(
+    shareTextConfig.resultTemplate
+      .replace("{points}", state.score)
+      .replace("{level}", difficulty.shareLabel)
+      .replace("{type}", type.label)
+  );
 }
 
 function pickJarramplasTarget(now) {
@@ -630,6 +684,7 @@ function update(now) {
       const jBox = { x: j.x, y: j.y + j.h * 0.78, w: j.w * 0.68, h: j.h * 0.78 };
       if (!turnip.hit && rectCircleHit(jBox, turnip)) {
         turnip.hit = true;
+        addJarramplasImpact(turnip.x, turnip.y, turnip.owner);
         if (turnip.owner === "player") {
           state.jarramplasHits += 1;
           j.flash = 0.22;
@@ -661,6 +716,15 @@ function update(now) {
     floater.y += floater.vy * dt;
   }
   state.floaters = state.floaters.filter((f) => f.life > 0);
+
+  for (const particle of state.particles) {
+    particle.life -= dt;
+    particle.x += particle.vx * dt;
+    particle.y += particle.vy * dt;
+    particle.vy += 310 * dt;
+    particle.vx *= Math.pow(0.12, dt);
+  }
+  state.particles = state.particles.filter((particle) => particle.life > 0);
 }
 
 function drawSprite(frame, x, y, h, flip = false, alpha = 1) {
@@ -772,6 +836,18 @@ function drawJarramplas() {
   }
 }
 
+function drawParticles() {
+  for (const particle of state.particles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / particle.maxLife));
+    ctx.fillStyle = particle.color;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawTimedCountdown() {
   if (state.mode !== "playing" || state.gameType !== "timed" || state.timeLeft > 10) return;
   const value = Math.max(0, Math.ceil(state.timeLeft));
@@ -796,6 +872,7 @@ function render() {
   ].sort((a, b) => a.y - b.y);
   for (const item of drawables) item.draw();
   for (const turnip of state.turnips) drawTurnip(turnip.x, turnip.y, turnip.r * 2, turnip.spin);
+  drawParticles();
   drawTimedCountdown();
 
   if (state.mode === "playing") {
@@ -885,9 +962,7 @@ function onPointerEnd(event) {
   launchTurnip(drag.start, drag.current, "player");
 }
 
-document.querySelectorAll("[data-level] span").forEach((span) => {
-  span.dataset.label = span.textContent;
-});
+applyLevelLabels();
 
 playButton.addEventListener("click", () => {
   if (!hasSeenTutorial()) {
