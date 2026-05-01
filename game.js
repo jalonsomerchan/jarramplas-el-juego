@@ -1,5 +1,6 @@
 import { createEventTracker, initAnalytics } from "./analytics.js";
 import {
+  APP_VERSION,
   difficultyConfig,
   gameTypeConfig,
   impactEffectConfig,
@@ -35,6 +36,7 @@ const loadingBar = document.getElementById("loadingBar");
 const loadingProgress = loadingScreen?.querySelector(".loading-bar");
 const playButton = document.getElementById("playButton");
 const jarramplasCountdownEl = document.getElementById("jarramplasCountdown");
+const gameVersionEl = document.getElementById("gameVersion");
 const scenarioOptions = document.getElementById("scenarioOptions");
 const screens = {
   start: document.getElementById("start"),
@@ -1294,6 +1296,7 @@ window.addEventListener("mouseup", onPointerEnd);
 window.addEventListener("resize", resize);
 
 updateJarramplasCountdown();
+if (gameVersionEl) gameVersionEl.textContent = `v${APP_VERSION}`;
 resize();
 loadAssets().catch((error) => {
   console.error(error);

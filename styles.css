@@ -248,6 +248,15 @@ h2 {
   line-height: 1.35;
 }
 
+.version-label {
+  margin-top: 12px;
+  color: rgba(255, 246, 223, 0.56);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
 button {
   width: 100%;
   min-height: 52px;

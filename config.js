@@ -1,3 +1,5 @@
+export const APP_VERSION = "1.0.0";
+
 export const difficultyConfig = {
   day18Evening: { label: "18 por la tarde", shareLabel: "18 de Enero por la tarde", meta: "Sin gente", people: 0, crowdThrow: 1.8, speed: 0.8 },
   day19Morning: { label: "19 por la mañana", shareLabel: "19 de Enero por la mañana", meta: "Fácil", people: 4, crowdThrow: 1.45, speed: 0.86 },
