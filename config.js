@@ -52,11 +52,21 @@ export const STORAGE_KEYS = {
   tutorial: "jarramplas.tutorialSeen.v2",
 };
 
-export const jarramplasFramePaths = Array.from(
-  { length: 11 },
-  (_, index) => `assets/jarramplas/frames/frame_${String(index + 1).padStart(3, "0")}.png`
+const makeJarramplasFramePaths = (root, frameCount) => Array.from(
+  { length: frameCount },
+  (_, index) => `${root}/frame_${String(index + 1).padStart(3, "0")}.png`
 );
+
+// Para añadir otro Jarramplas, crea assets/jarramplas/frames4 y añade otra entrada aquí.
+export const jarramplasVariants = [
+  { name: "Jarramplas 1", root: "assets/jarramplas/frames", frameCount: 16 },
+  { name: "Jarramplas 2", root: "assets/jarramplas/frames2", frameCount: 12 },
+  { name: "Jarramplas 3", root: "assets/jarramplas/frames3", frameCount: 12 },
+].map((variant) => ({
+  ...variant,
+  frames: makeJarramplasFramePaths(variant.root, variant.frameCount),
+}));
 
 export const personIds = [1, 2, 3, 4, 5, 6];
 export const personFrameRoots = ["assets/personas/frames", "assets/personajes/frames"];
-export const loadingAssetEstimate = jarramplasFramePaths.length + personFrameRoots.length + (personIds.length * 6) + scenarios.length;
+export const loadingAssetEstimate = jarramplasVariants.reduce((total, variant) => total + variant.frames.length, 0) + personFrameRoots.length + (personIds.length * 6) + scenarios.length;

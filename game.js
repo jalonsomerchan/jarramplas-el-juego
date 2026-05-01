@@ -3,8 +3,8 @@ import {
   difficultyConfig,
   gameTypeConfig,
   impactEffectConfig,
-  jarramplasFramePaths,
   jarramplasMovementConfig,
+  jarramplasVariants,
   loadingAssetEstimate,
   personFrameRoots,
   personIds,
@@ -52,6 +52,7 @@ const DPR = Math.min(window.devicePixelRatio || 1, 2);
 const assets = {
   ready: false,
   jarramplas: [],
+  jarramplasVariants: [],
   people: { side: [], front: [], back: [] },
   turnips: [],
   backgrounds: [],
@@ -150,6 +151,13 @@ function loadImageFrames(paths) {
   return Promise.all(paths.map(loadImageFrame));
 }
 
+async function loadJarramplasVariants() {
+  return Promise.all(jarramplasVariants.map(async (variant) => ({
+    ...variant,
+    frames: await loadImageFrames(variant.frames),
+  })));
+}
+
 async function loadOptionalImage(path, label = null) {
   try {
     return await loadImageFrame(path, label);
@@ -196,12 +204,13 @@ async function loadAssets() {
   playButton.disabled = true;
   playButton.textContent = "Cargando";
   updateLoadingBar(0);
-  const [jarramplas, people, backgrounds] = await Promise.all([
-    loadImageFrames(jarramplasFramePaths),
+  const [jarramplasVariantFrames, people, backgrounds] = await Promise.all([
+    loadJarramplasVariants(),
     loadPersonGroups(),
     loadBackgrounds(),
   ]);
-  assets.jarramplas = jarramplas;
+  assets.jarramplasVariants = jarramplasVariantFrames;
+  assets.jarramplas = jarramplasVariantFrames[0]?.frames || [];
   assets.people.side = people;
   assets.people.front = people;
   assets.people.back = people;
@@ -383,6 +392,8 @@ function startGame(difficulty, backgroundIndex = 0) {
   if (!assets.ready) return;
   const config = difficultyConfig[difficulty];
   const type = gameTypeConfig[state.pendingGameType];
+  const jarramplasVariant = assets.jarramplasVariants[Math.floor(Math.random() * assets.jarramplasVariants.length)];
+  assets.jarramplas = jarramplasVariant?.frames || [];
   assets.background = assets.backgrounds[backgroundIndex] || null;
   state.scenarioIndex = backgroundIndex;
   state.mode = "playing";
@@ -1038,7 +1049,7 @@ function drawPerson(person) {
 
 function drawJarramplas() {
   const j = state.jarramplas;
-  const walkFrames = assets.jarramplas.slice(0, 16);
+  const walkFrames = assets.jarramplas;
   const frame = walkFrames[j.walkFrame % Math.max(1, walkFrames.length)];
   drawSprite(frame, j.x, j.y + j.h, j.h);
   if (j.flash > 0) {
