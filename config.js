@@ -1,15 +1,15 @@
 export const difficultyConfig = {
-  day18Evening: { label: "18 por la tarde", shareLabel: "18 por la tarde", meta: "Sin gente", people: 0, crowdThrow: 1.8, speed: 0.8 },
-  day19Morning: { label: "19 por la mañana", shareLabel: "19 por la mañana", meta: "Fácil", people: 4, crowdThrow: 1.45, speed: 0.86 },
-  day19Evening: { label: "19 por la tarde", shareLabel: "19 por la tarde", meta: "Medio", people: 6, crowdThrow: 1.12, speed: 1 },
-  day20Morning: { label: "20 por la mañana", shareLabel: "20 por la mañana", meta: "Difícil", people: 9, crowdThrow: 0.84, speed: 1.16 },
-  day20Evening: { label: "20 por la tarde", shareLabel: "20 por la tarde", meta: "Extremo", people: 12, crowdThrow: 0.62, speed: 1.32 },
+  day18Evening: { label: "18 por la tarde", shareLabel: "18 de Enero por la tarde", meta: "Sin gente", people: 0, crowdThrow: 1.8, speed: 0.8 },
+  day19Morning: { label: "19 por la mañana", shareLabel: "19 de Enero por la mañana", meta: "Fácil", people: 4, crowdThrow: 1.45, speed: 0.86 },
+  day19Evening: { label: "19 por la tarde", shareLabel: "19 de Enero por la tarde", meta: "Medio", people: 6, crowdThrow: 1.12, speed: 1 },
+  day20Morning: { label: "20 por la mañana", shareLabel: "20 de Enero por la mañana", meta: "Difícil", people: 9, crowdThrow: 0.84, speed: 1.16 },
+  day20Evening: { label: "20 por la tarde", shareLabel: "20 de Enero por la tarde", meta: "Extremo", people: 12, crowdThrow: 0.62, speed: 1.32 },
 };
 
 export const gameTypeConfig = {
-  timed: { label: "Por tiempo", shortLabel: "Tiempo", duration: 60 },
-  survival: { label: "Hasta que Jarramplas aguante", shortLabel: "Vida", health: 100 },
-  limitedTurnips: { label: "Hasta que me quede sin nabos", shortLabel: "20 nabos", turnips: 20 },
+  timed: { label: "Por tiempo", shortLabel: "60 segundos", duration: 60 },
+  survival: { label: "Hasta que Jarramplas aguante", shortLabel: "Por Vida", health: 100 },
+  limitedTurnips: { label: "Hasta que me quede sin nabos", shortLabel: "Tienes 20 nabos", turnips: 20 },
   eviction: { label: "Hasta que me echen", shortLabel: "3 avisos", maxPeopleHits: 3, requiresPeople: true },
 };
 
