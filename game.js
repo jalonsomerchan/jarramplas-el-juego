@@ -1,3 +1,28 @@
+import { createEventTracker, initAnalytics } from "./analytics.js";
+import {
+  difficultyConfig,
+  gameTypeConfig,
+  impactEffectConfig,
+  jarramplasFramePaths,
+  jarramplasMovementConfig,
+  loadingAssetEstimate,
+  personFrameRoots,
+  personIds,
+  scenarios,
+  shareTextConfig,
+} from "./config.js";
+import {
+  formatNumber,
+  formatPercent,
+  getRecord,
+  getStats,
+  hasSeenTutorial,
+  markTutorialSeen,
+  recordGameFinishStats,
+  recordGameStartStats,
+  saveRecord,
+} from "./storage.js";
+
 const app = document.getElementById("app");
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -17,65 +42,13 @@ const screens = {
   select: document.getElementById("select"),
   scenario: document.getElementById("scenario"),
   tutorial: document.getElementById("tutorial"),
+  stats: document.getElementById("stats"),
   about: document.getElementById("about"),
   pause: document.getElementById("pause"),
   result: document.getElementById("result"),
 };
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
-const difficultyConfig = {
-  day18Evening: { label: "18 por la tarde", shareLabel: "18 por la tarde", meta: "Sin gente", people: 0, crowdThrow: 1.8, speed: 0.8 },
-  day19Morning: { label: "19 por la mañana", shareLabel: "19 por la mañana", meta: "Fácil", people: 4, crowdThrow: 1.45, speed: 0.86 },
-  day19Evening: { label: "19 por la tarde", shareLabel: "19 por la tarde", meta: "Medio", people: 6, crowdThrow: 1.12, speed: 1 },
-  day20Morning: { label: "20 por la mañana", shareLabel: "20 por la mañana", meta: "Difícil", people: 9, crowdThrow: 0.84, speed: 1.16 },
-  day20Evening: { label: "20 por la tarde", shareLabel: "20 por la tarde", meta: "Extremo", people: 12, crowdThrow: 0.62, speed: 1.32 },
-};
-
-const gameTypeConfig = {
-  timed: { label: "Por tiempo", shortLabel: "Tiempo", duration: 60 },
-  survival: { label: "Hasta que Jarramplas aguante", shortLabel: "Vida", health: 100 },
-  limitedTurnips: { label: "Hasta que me quede sin nabos", shortLabel: "20 nabos", turnips: 20 },
-  eviction: { label: "Hasta que me echen", shortLabel: "3 avisos", maxPeopleHits: 3, requiresPeople: true },
-};
-
-const jarramplasMovementConfig = {
-  minYRatio: 0.12,
-  maxYRatio: 0.25,
-};
-
-const impactEffectConfig = {
-  particleCount: 18,
-  sparkColors: ["#fff6df", "#f2bb3d", "#efe1c1", "#5eb356"],
-  playerBurstColor: "#f2bb3d",
-  crowdBurstColor: "#efe1c1",
-  duration: 0.46,
-};
-
-const shareTextConfig = {
-  gameTitle: "Juego de Jarramplas",
-  gameShareText: "Juega al Juego de Jarramplas",
-  resultTemplate: "He conseguido {points} puntos en el nivel {level} del tipo {type} del Juego de Jarramplas",
-};
-
-const scenarios = [
-  { name: "Ayuntamiento", path: "assets/fondos/ayuntamiento.png" },
-  { name: "Casa de Cultura", path: "assets/fondos/casa_cultura.png" },
-  { name: "Campo de fútbol", path: "assets/fondos/campo_de_futbol.png" },
-  { name: "Estatua de Jarramplas", path: "assets/fondos/estatua_jarramplas.png" },
-  { name: "Calle", path: "assets/fondos/fondo2.png" },
-  { name: "Iglesia", path: "assets/fondos/iglesia2.png" },
-  { name: "Mirador", path: "assets/fondos/mirador.png" },
-  { name: "Plaza de toros", path: "assets/fondos/plaza_de_toros.png" },
-  { name: "Parada", path: "assets/fondos/parada.png" },
-  { name: "Fachada de Jarramplas", path: "assets/fondos/fachada_jarramplas.png" },
-  { name: "Nieve", path: "assets/fondos/nieve.png" },
-];
-
-const STORAGE_KEYS = {
-  records: "jarramplas.records.v1",
-  tutorial: "jarramplas.tutorialSeen.v2",
-};
-
 const assets = {
   ready: false,
   jarramplas: [],
@@ -84,15 +57,6 @@ const assets = {
   backgrounds: [],
   background: null,
 };
-
-const jarramplasFramePaths = Array.from(
-  { length: 11 },
-  (_, index) => `assets/jarramplas/frames/frame_${String(index + 1).padStart(3, "0")}.png`
-);
-
-const personIds = [1, 2, 3, 4, 5, 6];
-const personFrameRoots = ["assets/personas/frames", "assets/personajes/frames"];
-const loadingAssetEstimate = jarramplasFramePaths.length + personFrameRoots.length + (personIds.length * 6) + scenarios.length;
 
 const loadingState = {
   loaded: 0,
@@ -110,6 +74,10 @@ const state = {
   score: 0,
   jarramplasHits: 0,
   peopleHits: 0,
+  playerTurnipsThrown: 0,
+  crowdTurnipsThrown: 0,
+  scoreFromHits: 0,
+  peoplePenalty: 0,
   timeLeft: 60,
   elapsed: 0,
   totalPaused: 0,
@@ -131,6 +99,13 @@ const state = {
   scenarioIndex: 0,
   tutorialNextScreen: "type",
 };
+
+const trackEvent = createEventTracker({
+  getState: () => state,
+  getAssets: () => assets,
+  gameTypeConfig,
+  difficultyConfig,
+});
 
 function updateLoadingBar(forcePercent = null) {
   const percent = forcePercent ?? Math.min(99, Math.round((loadingState.loaded / loadingState.total) * 100));
@@ -255,7 +230,10 @@ function buildScenarioButtons() {
     label.textContent = background.name;
     meta.textContent = "";
     button.append(label, meta);
-    button.addEventListener("click", () => startGame(state.pendingDifficulty, index));
+    button.addEventListener("click", () => {
+      trackEvent("scenario_selected", { selected_scenario: background.name });
+      startGame(state.pendingDifficulty, index);
+    });
     scenarioOptions.appendChild(button);
   });
 }
@@ -271,40 +249,6 @@ function applyLevelLabels() {
       meta.dataset.label = config.meta;
     }
   });
-}
-
-function getRecords() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.records) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function recordKey(gameType, difficulty) {
-  return `${gameType}:${difficulty}`;
-}
-
-function getRecord(gameType, difficulty) {
-  const records = getRecords();
-  return Number(records[recordKey(gameType, difficulty)] || 0);
-}
-
-function saveRecord(gameType, difficulty, score) {
-  const records = getRecords();
-  const key = recordKey(gameType, difficulty);
-  const best = Math.max(Number(records[key] || 0), score);
-  records[key] = best;
-  localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
-  return best;
-}
-
-function hasSeenTutorial() {
-  return localStorage.getItem(STORAGE_KEYS.tutorial) === "1";
-}
-
-function markTutorialSeen() {
-  localStorage.setItem(STORAGE_KEYS.tutorial, "1");
 }
 
 function updateJarramplasCountdown() {
@@ -350,11 +294,64 @@ function showScreen(name) {
   hud.classList.toggle("is-visible", state.mode === "playing" || state.mode === "paused");
 }
 
+function statBox(value, label) {
+  const box = document.createElement("div");
+  const strong = document.createElement("strong");
+  const span = document.createElement("span");
+  box.className = "stat-box";
+  strong.textContent = value;
+  span.textContent = label;
+  box.append(strong, span);
+  return box;
+}
+
+function detailRow(label, value) {
+  const row = document.createElement("div");
+  const labelEl = document.createElement("span");
+  const valueEl = document.createElement("strong");
+  row.className = "detail-row";
+  labelEl.textContent = label;
+  valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  return row;
+}
+
+function renderStatsScreen() {
+  const stats = getStats();
+  const grid = document.getElementById("statsGrid");
+  const details = document.getElementById("statsDetails");
+  const favoriteType = Object.entries(stats.byType || {}).sort((a, b) => (b[1].gamesFinished || 0) - (a[1].gamesFinished || 0))[0];
+  const favoriteDifficulty = Object.entries(stats.byDifficulty || {}).sort((a, b) => (b[1].gamesFinished || 0) - (a[1].gamesFinished || 0))[0];
+  const avgScore = stats.gamesFinished ? stats.totalScore / stats.gamesFinished : 0;
+  grid.innerHTML = "";
+  details.innerHTML = "";
+  grid.append(
+    statBox(formatNumber(stats.gamesStarted), "Partidas jugadas"),
+    statBox(formatNumber(stats.gamesFinished), "Partidas acabadas"),
+    statBox(formatNumber(stats.turnipsThrown), "Nabos tirados"),
+    statBox(formatNumber(stats.turnipsHit), "Nabos acertados"),
+    statBox(formatNumber(stats.peopleHits), "Personas dadas"),
+    statBox(formatNumber(stats.bestScore), "Mejor puntuación")
+  );
+  details.append(
+    detailRow("Acierto total", formatPercent(stats.turnipsHit, stats.turnipsThrown)),
+    detailRow("Puntuación media", `${formatNumber(avgScore)} pts`),
+    detailRow("Tipo más jugado", favoriteType ? (gameTypeConfig[favoriteType[0]]?.label || favoriteType[0]) : "Sin partidas"),
+    detailRow("Nivel más jugado", favoriteDifficulty ? (difficultyConfig[favoriteDifficulty[0]]?.label || favoriteDifficulty[0]) : "Sin partidas")
+  );
+  (stats.scores || []).slice(0, 5).forEach((entry, index) => {
+    const type = gameTypeConfig[entry.gameType]?.shortLabel || entry.gameType;
+    const difficulty = difficultyConfig[entry.difficulty]?.shareLabel || entry.difficulty;
+    details.append(detailRow(`Puntuación ${index + 1}: ${type} · ${difficulty}`, `${formatNumber(entry.score)} pts`));
+  });
+}
+
 function chooseGameType(gameType) {
   if (!assets.ready) return;
   state.pendingGameType = gameType;
   state.mode = "select";
   refreshLevelOptions();
+  trackEvent("game_type_selected", { selected_game_type: gameType, selected_game_type_label: gameTypeConfig[gameType]?.label || "" });
   showScreen("select");
 }
 
@@ -378,6 +375,7 @@ function chooseLevel(difficulty) {
   if (type.requiresPeople && difficultyConfig[difficulty].people === 0) return;
   state.pendingDifficulty = difficulty;
   state.mode = "scenario";
+  trackEvent("difficulty_selected", { selected_difficulty: difficulty, selected_difficulty_label: difficultyConfig[difficulty]?.label || "" });
   showScreen("scenario");
 }
 
@@ -393,6 +391,10 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.score = 0;
   state.jarramplasHits = 0;
   state.peopleHits = 0;
+  state.playerTurnipsThrown = 0;
+  state.crowdTurnipsThrown = 0;
+  state.scoreFromHits = 0;
+  state.peoplePenalty = 0;
   state.timeLeft = type.duration || 0;
   state.elapsed = 0;
   state.totalPaused = 0;
@@ -420,24 +422,98 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.jarramplas.flash = 0;
   updateHud();
   for (let i = 0; i < config.people; i += 1) spawnPerson(true);
+  recordGameStartStats(state.gameType, state.difficulty);
+  trackEvent("game_started", {
+    people_count: config.people,
+    record_score: getRecord(state.gameType, state.difficulty),
+  });
   showScreen(null);
   hud.classList.add("is-visible");
 }
 
 function endGame() {
   if (state.mode !== "playing") return;
+  const previousBest = getRecord(state.gameType, state.difficulty);
   if (state.gameType === "survival") {
     state.score = Math.max(0, Math.round(1200 - state.elapsed * 10 + state.jarramplasHits * 12 - state.peopleHits * 30));
   }
   const best = saveRecord(state.gameType, state.difficulty, state.score);
   const type = gameTypeConfig[state.gameType];
   const difficulty = difficultyConfig[state.difficulty];
+  const scenario = assets.backgrounds[state.scenarioIndex];
+  const improvedRecord = state.score > previousBest;
+  const match = {
+    score: state.score,
+    gameType: state.gameType,
+    difficulty: state.difficulty,
+    scenario: scenario?.name || "",
+    elapsed: Math.round(state.elapsed),
+    turnipsThrown: state.playerTurnipsThrown,
+    turnipsHit: state.jarramplasHits,
+    peopleHits: state.peopleHits,
+  };
+  recordGameFinishStats(match);
   state.mode = "result";
   hud.classList.remove("is-visible");
-  document.getElementById("finalScore").textContent = `${state.score} pts`;
-  document.getElementById("finalHits").textContent = `${type.label} · ${difficulty.label} · Jarramplas: ${state.jarramplasHits} impactos · Gente: ${state.peopleHits} impactos`;
-  document.getElementById("finalRecord").textContent = `Récord en este modo: ${best} pts`;
+  renderResultScreen({ best, previousBest, improvedRecord });
+  trackEvent("game_finished", {
+    end_reason: state.endReason || "completed",
+    final_score: state.score,
+    previous_record: previousBest,
+    record_score: best,
+    improved_record: improvedRecord,
+    turnips_thrown: state.playerTurnipsThrown,
+    turnips_hit: state.jarramplasHits,
+    people_hits: state.peopleHits,
+    crowd_turnips: state.crowdTurnipsThrown,
+  });
   showScreen("result");
+}
+
+function endReasonLabel() {
+  if (state.endReason === "expulsado") return "Expulsión por avisos";
+  if (state.endReason === "jarramplas") return "Jarramplas agotado";
+  if (state.endReason === "sin nabos") return "Sin nabos";
+  if (state.gameType === "timed") return "Tiempo agotado";
+  return "Partida completada";
+}
+
+function renderResultScreen({ best, previousBest, improvedRecord }) {
+  const type = gameTypeConfig[state.gameType];
+  const difficulty = difficultyConfig[state.difficulty];
+  const recordEl = document.getElementById("finalRecord");
+  const detail = document.getElementById("finalScoreDetail");
+  const elapsed = Math.round(state.elapsed);
+  const accuracy = formatPercent(state.jarramplasHits, state.playerTurnipsThrown);
+  document.getElementById("finalScore").textContent = `${formatNumber(state.score)} pts`;
+  document.getElementById("finalMode").textContent = `${type.label} · ${difficulty.label} · ${endReasonLabel()}`;
+  document.getElementById("finalTurnipsThrown").textContent = formatNumber(state.playerTurnipsThrown);
+  document.getElementById("finalTurnipsHit").textContent = formatNumber(state.jarramplasHits);
+  document.getElementById("finalPeopleHits").textContent = formatNumber(state.peopleHits);
+  document.getElementById("finalAccuracy").textContent = accuracy;
+  recordEl.classList.toggle("is-muted", !improvedRecord);
+  recordEl.textContent = improvedRecord
+    ? `Nuevo récord: ${formatNumber(best)} pts (antes ${formatNumber(previousBest)} pts)`
+    : `Récord de este modo: ${formatNumber(best)} pts`;
+  detail.innerHTML = "";
+  if (state.gameType === "survival") {
+    const timePenalty = Math.round(state.elapsed * 10);
+    detail.append(
+      detailRow("Base de resistencia", "+1.200 pts"),
+      detailRow("Bonus por impactos", `+${formatNumber(state.jarramplasHits * 12)} pts`),
+      detailRow("Penalización por tiempo", `-${formatNumber(timePenalty)} pts`),
+      detailRow("Penalización por personas", `-${formatNumber(state.peopleHits * 30)} pts`)
+    );
+  } else {
+    detail.append(
+      detailRow("Impactos a Jarramplas", `+${formatNumber(state.scoreFromHits)} pts`),
+      detailRow("Personas dadas", `-${formatNumber(state.peoplePenalty)} pts`)
+    );
+  }
+  detail.append(
+    detailRow("Duración", `${formatNumber(elapsed)} s`),
+    detailRow("Nabos de la gente", formatNumber(state.crowdTurnipsThrown))
+  );
 }
 
 function pauseGame() {
@@ -445,6 +521,7 @@ function pauseGame() {
   state.mode = "paused";
   state.pausedAt = performance.now();
   state.drag = null;
+  trackEvent("game_paused");
   showScreen("pause");
 }
 
@@ -455,6 +532,7 @@ function resumeGame() {
   state.pausedAt = 0;
   state.last = now;
   state.mode = "playing";
+  trackEvent("game_resumed");
   showScreen(null);
   hud.classList.add("is-visible");
 }
@@ -464,10 +542,12 @@ function restartGame() {
   const gameType = state.gameType;
   const scenarioIndex = state.scenarioIndex;
   state.pendingGameType = gameType;
+  trackEvent("game_restarted", { restart_from: state.mode });
   startGame(difficulty, scenarioIndex);
 }
 
 function goHome() {
+  trackEvent("home_opened", { from_mode: state.mode });
   state.mode = "menu";
   state.drag = null;
   state.turnips = [];
@@ -582,12 +662,14 @@ function shareText(text) {
 }
 
 function shareGame() {
+  trackEvent("share_game");
   shareText(shareTextConfig.gameShareText);
 }
 
 function shareResult() {
   const type = gameTypeConfig[state.gameType];
   const difficulty = difficultyConfig[state.difficulty];
+  trackEvent("share_result", { final_score: state.score });
   shareText(
     shareTextConfig.resultTemplate
       .replace("{points}", state.score)
@@ -641,6 +723,16 @@ function launchTurnip(from, to, owner) {
   if (owner === "player" && state.gameType === "limitedTurnips") {
     if (state.turnipsLeft <= 0) return;
     state.turnipsLeft -= 1;
+  }
+  if (owner === "player") {
+    state.playerTurnipsThrown += 1;
+    trackEvent("turnip_thrown", {
+      turnip_owner: owner,
+      turnips_thrown: state.playerTurnipsThrown,
+      launch_power: Math.round(power),
+    });
+  } else {
+    state.crowdTurnipsThrown += 1;
   }
   const speed = owner === "player" ? 760 : 365 + Math.random() * 70;
   const angle = Math.atan2(dy, dx);
@@ -721,8 +813,13 @@ function update(now) {
           if (rectCircleHit(hitBox, turnip)) {
             turnip.hit = true;
             state.peopleHits += 1;
+            state.peoplePenalty += 5;
             state.score = Math.max(0, state.score - 5);
             addFloater("-5", person.x, person.y - person.h * 0.72, "#ff8f77");
+            trackEvent("person_hit", {
+              people_hits: state.peopleHits,
+              score_after_hit: state.score,
+            });
             if (state.gameType === "eviction" && state.peopleHits >= type.maxPeopleHits) {
               state.endReason = "expulsado";
               endGame();
@@ -743,14 +840,26 @@ function update(now) {
             state.jarramplasHealth = Math.max(0, state.jarramplasHealth - 10);
             const gain = Math.max(1, Math.round(40 - state.elapsed * 0.35));
             state.score += gain;
+            state.scoreFromHits += gain;
             addFloater(`+${gain}`, j.x, j.y + j.h * 0.18, "#f2df70");
+            trackEvent("jarramplas_hit", {
+              hit_points: gain,
+              jarramplas_hits: state.jarramplasHits,
+              score_after_hit: state.score,
+            });
             if (state.jarramplasHealth <= 0) {
               state.endReason = "jarramplas";
               endGame();
             }
           } else {
             state.score += 10;
+            state.scoreFromHits += 10;
             addFloater("+10", j.x, j.y + j.h * 0.18, "#f2df70");
+            trackEvent("jarramplas_hit", {
+              hit_points: 10,
+              jarramplas_hits: state.jarramplasHits,
+              score_after_hit: state.score,
+            });
           }
         }
       }
@@ -1084,8 +1193,11 @@ function onPointerEnd(event) {
 }
 
 applyLevelLabels();
+initAnalytics();
+trackEvent("app_loaded");
 
 playButton.addEventListener("click", () => {
+  trackEvent("menu_play_clicked");
   if (!hasSeenTutorial()) {
     state.tutorialNextScreen = "type";
     state.mode = "tutorial";
@@ -1095,13 +1207,25 @@ playButton.addEventListener("click", () => {
   state.mode = "type";
   showScreen("type");
 });
+document.getElementById("statsButton").addEventListener("click", () => {
+  renderStatsScreen();
+  state.mode = "stats";
+  trackEvent("stats_opened");
+  showScreen("stats");
+});
+document.getElementById("statsBackButton").addEventListener("click", () => {
+  state.mode = "menu";
+  showScreen("start");
+});
 document.getElementById("howToButton").addEventListener("click", () => {
   state.tutorialNextScreen = "start";
   state.mode = "tutorial";
+  trackEvent("tutorial_opened");
   showScreen("tutorial");
 });
 document.getElementById("aboutButton").addEventListener("click", () => {
   state.mode = "about";
+  trackEvent("about_opened");
   showScreen("about");
 });
 document.getElementById("aboutBackButton").addEventListener("click", () => {
@@ -1111,6 +1235,7 @@ document.getElementById("aboutBackButton").addEventListener("click", () => {
 document.getElementById("shareButton").addEventListener("click", shareGame);
 document.getElementById("tutorialButton").addEventListener("click", () => {
   markTutorialSeen();
+  trackEvent("tutorial_completed");
   if (state.tutorialNextScreen === "start") {
     state.mode = "menu";
     showScreen("start");
@@ -1131,7 +1256,9 @@ document.getElementById("levelBackButton").addEventListener("click", () => {
   state.mode = "select";
   showScreen("select");
 });
+document.getElementById("playAgainButton").addEventListener("click", restartGame);
 document.getElementById("againButton").addEventListener("click", () => {
+  trackEvent("new_game_flow_opened");
   state.mode = "type";
   showScreen("type");
 });

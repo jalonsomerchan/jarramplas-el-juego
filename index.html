@@ -4,352 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Jarramplas Throw</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --ink: #fff6df;
-      --muted: #cbbf9f;
-      --red: #d93c2f;
-      --green: #5dbb63;
-      --gold: #f2bb3d;
-      --panel: rgba(20, 24, 25, 0.78);
-      --line: rgba(255, 255, 255, 0.16);
-    }
-
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    html,
-    body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      overflow: hidden;
-      background: #131614;
-      color: var(--ink);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      touch-action: none;
-    }
-
-    body {
-      position: fixed;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      background: #090b0b;
-    }
-
-    #app {
-      position: relative;
-      width: min(100vw, 430px);
-      height: 100dvh;
-      overflow: hidden;
-      background: #131614;
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 26px 90px rgba(0, 0, 0, 0.55);
-    }
-
-    #game {
-      display: block;
-      width: 100%;
-      height: 100%;
-      background: #202624;
-    }
-
-    .loading-screen {
-      position: absolute;
-      inset: 0;
-      z-index: 8;
-      display: grid;
-      place-items: center;
-      padding: max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom));
-      background:
-        radial-gradient(circle at 50% 22%, rgba(242, 187, 61, 0.2), transparent 34%),
-        linear-gradient(180deg, #101412 0%, #070909 100%);
-    }
-
-    .loading-screen:not(.is-visible) {
-      display: none;
-    }
-
-    .loading-content {
-      width: min(320px, 100%);
-      display: grid;
-      justify-items: center;
-      gap: 18px;
-      text-align: center;
-    }
-
-    .loading-symbol {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: clamp(48px, 18vw, 76px);
-      font-weight: 900;
-      letter-spacing: 0;
-      color: rgba(255, 246, 223, 0.34);
-      text-shadow: 0 0 0 rgba(242, 187, 61, 0);
-      animation: loadingGlow 1.15s ease-in-out infinite;
-    }
-
-    .loading-message {
-      color: var(--ink);
-      font-size: clamp(20px, 6vw, 27px);
-      font-weight: 900;
-      line-height: 1;
-      text-transform: uppercase;
-      text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
-    }
-
-    .loading-bar {
-      width: 100%;
-      height: 16px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.42);
-    }
-
-    .loading-bar-fill {
-      width: 0%;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, var(--red), var(--gold), var(--green));
-      box-shadow: 0 0 18px rgba(242, 187, 61, 0.52);
-      transition: width 0.22s ease;
-    }
-
-    @keyframes loadingGlow {
-      0%,
-      100% {
-        color: rgba(255, 246, 223, 0.34);
-        text-shadow: 0 0 0 rgba(242, 187, 61, 0);
-      }
-
-      45%,
-      58% {
-        color: #fff6df;
-        text-shadow: 0 0 10px rgba(242, 187, 61, 0.92), 0 0 28px rgba(217, 60, 47, 0.42);
-      }
-    }
-
-    .hud {
-      position: absolute;
-      top: max(10px, env(safe-area-inset-top));
-      left: 10px;
-      right: 10px;
-      z-index: 3;
-      display: none;
-      grid-template-columns: 1fr 1fr 1fr auto;
-      align-items: center;
-      gap: 8px;
-      pointer-events: none;
-      font-weight: 800;
-      text-shadow: 0 2px 3px rgba(0, 0, 0, 0.8);
-    }
-
-    .hud.is-visible {
-      display: grid;
-    }
-
-    .pill {
-      min-width: 74px;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(9, 12, 12, 0.62);
-      font-size: clamp(15px, 4vw, 18px);
-      line-height: 1;
-      white-space: nowrap;
-      backdrop-filter: blur(10px);
-    }
-
-    .pill small {
-      display: block;
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 10px;
-      line-height: 1;
-      text-transform: uppercase;
-    }
-
-    .pill:nth-child(2) {
-      justify-self: center;
-      color: var(--gold);
-    }
-
-    .pill:last-child {
-      justify-self: end;
-      color: #dcf8db;
-    }
-
-    .hud-button {
-      width: 48px;
-      min-height: 48px;
-      padding: 0;
-      pointer-events: auto;
-      background: rgba(9, 12, 12, 0.72);
-      box-shadow: none;
-      font-size: 25px;
-      line-height: 1;
-    }
-
-    .screen {
-      position: absolute;
-      inset: 0;
-      z-index: 5;
-      display: none;
-      place-items: center;
-      padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
-      background: linear-gradient(rgba(12, 14, 13, 0.18), rgba(12, 14, 13, 0.76));
-    }
-
-    .screen.is-visible {
-      display: grid;
-    }
-
-    .menu {
-      width: min(420px, 100%);
-      margin-top: auto;
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
-      backdrop-filter: blur(14px);
-    }
-    .menu h1 {
-      text-align: center;
-    }
-    .menu h2 {
-      text-align: center;
-    }
-
-    h1,
-    h2,
-    p {
-      margin: 0;
-    }
-
-    h1 {
-      font-size: clamp(34px, 11.8vw, 58px);
-      line-height: 0.92;
-      letter-spacing: 0;
-      text-transform: uppercase;
-      text-shadow: 0 5px 0 #64180f, 0 10px 30px rgba(0, 0, 0, 0.72);
-      overflow-wrap: anywhere;
-    }
-
-    h2 {
-      margin-bottom: 14px;
-      font-size: clamp(25px, 8vw, 34px);
-      line-height: 1;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-
-    .tagline {
-      margin: 12px 0 18px;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1.35;
-    }
-
-    button {
-      width: 100%;
-      min-height: 52px;
-      border: 0;
-      border-radius: 8px;
-      background: var(--red);
-      color: white;
-      font: inherit;
-      font-size: 18px;
-      font-weight: 900;
-      letter-spacing: 0;
-      text-transform: uppercase;
-      box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25), 0 10px 24px rgba(0, 0, 0, 0.28);
-    }
-
-    button:active {
-      transform: translateY(2px);
-      box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 5px 14px rgba(0, 0, 0, 0.32);
-    }
-
-    .options {
-      display: grid;
-      gap: 10px;
-    }
-
-    .options button {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
-      padding: 0 14px;
-      text-align: left;
-      background: #2f6c68;
-      font-size: 17px;
-    }
-
-    .options span {
-      justify-self: end;
-      color: #f9e6aa;
-      font-size: 13px;
-      font-weight: 800;
-    }
-
-    .scroll-options {
-      max-height: min(52dvh, 430px);
-      overflow-y: auto;
-      padding-right: 4px;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .secondary {
-      margin-top: 10px;
-      background: #3a3a36;
-      font-size: 15px;
-    }
-
-    .menu-actions {
-      display: grid;
-      gap: 10px;
-      margin-top: 10px;
-    }
-
-    .menu-actions .secondary {
-      margin-top: 0;
-    }
-
-    .tutorial {
-      display: grid;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1.35;
-    }
-
-    .tutorial strong {
-      color: var(--ink);
-    }
-
-    #result .menu {
-      text-align: center;
-    }
-
-    .scoreline {
-      margin: 10px 0 16px;
-      color: var(--gold);
-      font-size: clamp(42px, 15vw, 72px);
-      font-weight: 950;
-      line-height: 1;
-      text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
-    }
-
-    #againButton {
-      margin-top: 10px;
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css?v=20260501-1">
 </head>
 <body>
   <div id="app">
@@ -379,6 +34,7 @@
         <p class="tagline" id="jarramplasCountdown">Quedan -- días para Jarramplas</p>
         <button id="playButton" type="button">Jugar</button>
         <div class="menu-actions">
+          <button class="secondary" id="statsButton" type="button">Estadísticas</button>
           <button class="secondary" id="howToButton" type="button">Cómo jugar</button>
           <button class="secondary" id="aboutButton" type="button">Acerca de</button>
           <button class="secondary" id="shareButton" type="button">Compartir</button>
@@ -433,13 +89,23 @@
       </div>
     </section>
 
+    <section class="screen" id="stats">
+      <div class="menu">
+        <h2>Estadísticas</h2>
+        <div class="stats-grid" id="statsGrid"></div>
+        <div class="detail-list" id="statsDetails"></div>
+        <button class="secondary" id="statsBackButton" type="button">Volver</button>
+      </div>
+    </section>
+
     <section class="screen" id="about">
       <div class="menu">
         <h2>Acerca de</h2>
         <div class="tutorial">
-          <p><strong>Juego de Jarramplas</strong></p>
-          <p>Hecho en Extremadura.</p>
-          <p>Año 2026.</p>
+          <p><strong>Jarramplas - El juego</strong></p>
+          <p>"A los veinte de enero, cuando más hiela, sale un capitán fuerte a poner bandera". Ahora también sale en tu móvil.</p>
+          <p>Homenaje a la fiesta de Jarramplas (Piornal).</p>
+          <p>Hecho por Jorge Alonso. Abril de 2026.</p>
         </div>
         <button class="secondary" id="aboutBackButton" type="button">Volver</button>
       </div>
@@ -458,16 +124,27 @@
 
     <section class="screen" id="result">
       <div class="menu">
-        <h2>Puntuación</h2>
+        <h2>Partida finalizada</h2>
         <div class="scoreline" id="finalScore">0</div>
-        <p class="tagline" id="finalHits">Jarramplas: 0 · Gente: 0</p>
-        <p class="tagline" id="finalRecord">Récord: 0</p>
+        <p class="tagline" id="finalMode">Tipo · Nivel</p>
+        <div class="record-banner" id="finalRecord">Récord: 0</div>
+        <div class="stats-grid">
+          <div class="stat-box"><strong id="finalTurnipsThrown">0</strong><span>Nabos tirados</span></div>
+          <div class="stat-box"><strong id="finalTurnipsHit">0</strong><span>Nabos acertados</span></div>
+          <div class="stat-box"><strong id="finalPeopleHits">0</strong><span>Personas dadas</span></div>
+          <div class="stat-box"><strong id="finalAccuracy">0%</strong><span>Acierto</span></div>
+        </div>
+        <div class="detail-list" id="finalScoreDetail"></div>
         <button id="shareResultButton" type="button">Compartir puntuación</button>
-        <button id="againButton" type="button">Otra partida</button>
+        <button id="playAgainButton" type="button">Volver a jugar</button>
+        <button class="secondary" id="againButton" type="button">Otra partida</button>
       </div>
     </section>
   </div>
 
-  <script src="game.js?v=20260429-10"></script>
+  <script>
+    window.JARRAMPLAS_GA_ID = "G-K0GLRGX6TE";
+  </script>
+  <script type="module" src="game.js?v=20260501-1"></script>
 </body>
 </html>
