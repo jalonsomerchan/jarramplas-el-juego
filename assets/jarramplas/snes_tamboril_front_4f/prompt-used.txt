@@ -1,0 +1,9 @@
+Use the Jarramplas reference image shown in this conversation as the visual reference for the costume identity: preserve the tall black horned mask silhouette, red and white zigzag face markings, round eye openings, cherry-like red forehead detail, shaggy multicolor ribbon-covered body, blue ribbons, and the tamboril drum.
+
+Create a 1x4 animation sprite sheet: exactly 4 equal-size cells in one horizontal row. All four frames show the same Jarramplas facing FRONT toward the camera only, top-down 16-bit SNES RPG overworld pixel art, 3/4 view from slightly above, full body visible, chunky readable pixel art, crisp dark outlines, saturated SNES palette.
+
+Animation: Jarramplas walks in place while playing the tamboril. Frame 1 neutral stance holding the tamboril. Frame 2 left foot forward, right arm raises a plain flat drumstick. Frame 3 neutral stance, flat drumstick touching the drum skin. Frame 4 right foot forward, flat drumstick lowered after the strike. The tamboril is a small side drum held at the waist. IMPORTANT: the drumsticks are simple straight flat wooden sticks with blunt flat ends, no ball, no round mallet head, no knob, no sphere, no lollipop shape.
+
+Same character identity, same costume, same palette, same bounding box, same pixel scale in all 4 cells. Only the legs, arms, drumstick position, and tiny drum-playing motion change.
+
+ABSOLUTE RULES: background is 100% solid flat magenta #FF00FF, no gradients. No text, no labels, no UI, no borders, no grid lines, no frames between cells. The entire subject must fit fully inside each cell, no horn tip, ribbon, drum, arm, foot, or drumstick may cross a cell edge. Leave magenta margin on all four sides. No floating detached effects outside the main silhouette.
