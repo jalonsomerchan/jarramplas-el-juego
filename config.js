@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.2.0";
 
 export const difficultyConfig = {
   day18Evening: { label: "18 por la tarde", shareLabel: "18 de Enero por la tarde", meta: "Sin gente", people: 0, crowdThrow: 1.8, speed: 0.8 },
@@ -59,16 +59,39 @@ const makeJarramplasFramePaths = (root, frameCount) => Array.from(
   (_, index) => `${root}/frame_${String(index + 1).padStart(3, "0")}.png`
 );
 
-// Para añadir otro Jarramplas, crea assets/jarramplas/frames4 y añade otra entrada aquí.
+const jarramplasDirections = ["down", "left", "right", "up"];
+const makeJarramplasDirectionalFramePaths = (root, frameCount = 4, directions = jarramplasDirections) => Object.fromEntries(
+  directions.map((direction) => [
+    direction,
+    Array.from(
+      { length: frameCount },
+      (_, index) => `${root}/${direction}-${index + 1}.png`
+    ),
+  ])
+);
+
+const countJarramplasFrames = (variant) => {
+  if (Array.isArray(variant.frames)) return variant.frames.length;
+  return Object.values(variant.frames || {}).reduce((total, frames) => total + frames.length, 0);
+};
+
+// Para añadir otro Jarramplas, crea una carpeta con frame_001.. o con down/left/right/up y añade otra entrada aquí.
 export const jarramplasVariants = [
-  { name: "Jarramplas 1", root: "assets/jarramplas/frames", frameCount: 16 },
-  { name: "Jarramplas 2", root: "assets/jarramplas/frames2", frameCount: 12 },
-  { name: "Jarramplas 3", root: "assets/jarramplas/frames3", frameCount: 12 },
+  { name: "Jarramplas frontal tamboril HD", root: "assets/jarramplas/snes_tamboril_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas modelo izquierdo HD", root: "assets/jarramplas/modelo_izquierda_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas modelo central HD", root: "assets/jarramplas/modelo_centro_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas modelo derecho HD", root: "assets/jarramplas/modelo_derecha_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas rojo y verde HD", root: "assets/jarramplas/modelo_rojo_verde_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas león HD", root: "assets/jarramplas/modelo_leon_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas búho azul HD", root: "assets/jarramplas/modelo_buho_azul_front_8f_hd", frameCount: 8 },
+  { name: "Jarramplas negro y dorado HD", root: "assets/jarramplas/modelo_negro_dorado_front_8f_hd", frameCount: 8 },
 ].map((variant) => ({
   ...variant,
-  frames: makeJarramplasFramePaths(variant.root, variant.frameCount),
+  frames: variant.directions
+    ? makeJarramplasDirectionalFramePaths(variant.root, variant.frameCount, variant.directions)
+    : makeJarramplasFramePaths(variant.root, variant.frameCount),
 }));
 
 export const personIds = [1, 2, 3, 4, 5, 6];
 export const personFrameRoots = ["assets/personas/frames", "assets/personajes/frames"];
-export const loadingAssetEstimate = jarramplasVariants.reduce((total, variant) => total + variant.frames.length, 0) + personFrameRoots.length + (personIds.length * 6) + scenarios.length;
+export const loadingAssetEstimate = jarramplasVariants.reduce((total, variant) => total + countJarramplasFrames(variant), 0) + personFrameRoots.length + (personIds.length * 6) + scenarios.length;

@@ -38,11 +38,13 @@ const playButton = document.getElementById("playButton");
 const jarramplasCountdownEl = document.getElementById("jarramplasCountdown");
 const gameVersionEl = document.getElementById("gameVersion");
 const scenarioOptions = document.getElementById("scenarioOptions");
+const jarramplasOptions = document.getElementById("jarramplasOptions");
 const screens = {
   start: document.getElementById("start"),
   type: document.getElementById("type"),
   select: document.getElementById("select"),
   scenario: document.getElementById("scenario"),
+  jarramplasSelect: document.getElementById("jarramplasSelect"),
   tutorial: document.getElementById("tutorial"),
   stats: document.getElementById("stats"),
   about: document.getElementById("about"),
@@ -53,7 +55,7 @@ const screens = {
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 const assets = {
   ready: false,
-  jarramplas: [],
+  jarramplas: { down: [], left: [], right: [], up: [] },
   jarramplasVariants: [],
   people: { side: [], front: [], back: [] },
   turnips: [],
@@ -72,6 +74,8 @@ const state = {
   pendingGameType: "timed",
   difficulty: "day19Morning",
   pendingDifficulty: "day19Morning",
+  pendingScenarioIndex: 0,
+  pendingJarramplasIndex: null,
   w: 0,
   h: 0,
   score: 0,
@@ -90,7 +94,7 @@ const state = {
   endReason: "",
   startedAt: 0,
   last: 0,
-  jarramplas: { x: 0, y: 0, w: 112, h: 150, vx: 76, vy: 0, targetX: 0, targetY: 0, walkFrame: 0, flash: 0, nextMoveAt: 0 },
+  jarramplas: { x: 0, y: 0, w: 112, h: 150, vx: 76, vy: 0, targetX: 0, targetY: 0, direction: "down", walkFrame: 0, flash: 0, nextMoveAt: 0 },
   people: [],
   turnips: [],
   floaters: [],
@@ -100,6 +104,7 @@ const state = {
   nextPersonId: 0,
   nextPersonAt: 0,
   scenarioIndex: 0,
+  jarramplasIndex: null,
   tutorialNextScreen: "type",
 };
 
@@ -153,10 +158,26 @@ function loadImageFrames(paths) {
   return Promise.all(paths.map(loadImageFrame));
 }
 
+function emptyJarramplasFrames() {
+  return { down: [], left: [], right: [], up: [] };
+}
+
+async function loadJarramplasFrameSet(framePaths) {
+  if (Array.isArray(framePaths)) {
+    const frames = await loadImageFrames(framePaths);
+    return { down: frames, left: frames, right: frames, up: frames };
+  }
+  const loaded = await Promise.all(Object.entries(framePaths).map(async ([direction, paths]) => [
+    direction,
+    await loadImageFrames(paths),
+  ]));
+  return { ...emptyJarramplasFrames(), ...Object.fromEntries(loaded) };
+}
+
 async function loadJarramplasVariants() {
   return Promise.all(jarramplasVariants.map(async (variant) => ({
     ...variant,
-    frames: await loadImageFrames(variant.frames),
+    frames: await loadJarramplasFrameSet(variant.frames),
   })));
 }
 
@@ -212,7 +233,7 @@ async function loadAssets() {
     loadBackgrounds(),
   ]);
   assets.jarramplasVariants = jarramplasVariantFrames;
-  assets.jarramplas = jarramplasVariantFrames[0]?.frames || [];
+  assets.jarramplas = jarramplasVariantFrames[0]?.frames || emptyJarramplasFrames();
   assets.people.side = people;
   assets.people.front = people;
   assets.people.back = people;
@@ -220,6 +241,7 @@ async function loadAssets() {
   assets.backgrounds = backgrounds;
   assets.background = backgrounds[Math.floor(Math.random() * backgrounds.length)] || null;
   buildScenarioButtons();
+  buildJarramplasButtons();
   assets.ready = true;
   updateLoadingBar(100);
   playButton.disabled = false;
@@ -243,9 +265,60 @@ function buildScenarioButtons() {
     button.append(label, meta);
     button.addEventListener("click", () => {
       trackEvent("scenario_selected", { selected_scenario: background.name });
-      startGame(state.pendingDifficulty, index);
+      state.pendingScenarioIndex = index;
+      state.pendingJarramplasIndex = null;
+      state.mode = "jarramplasSelect";
+      showScreen("jarramplasSelect");
     });
     scenarioOptions.appendChild(button);
+  });
+}
+
+function jarramplasPreviewPath(variant) {
+  const frames = variant.frames?.down || [];
+  return frames[0]?.path || "";
+}
+
+function addJarramplasTile(label, imagePath, onClick) {
+  const button = document.createElement("button");
+  const preview = document.createElement("img");
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  preview.alt = "";
+  preview.src = imagePath;
+  button.append(preview);
+  button.addEventListener("click", onClick);
+  jarramplasOptions.appendChild(button);
+}
+
+function addRandomJarramplasTile(onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "random-jarramplas";
+  button.setAttribute("aria-label", "Aleatorio");
+  assets.jarramplasVariants.slice(0, 4).forEach((variant) => {
+    const preview = document.createElement("img");
+    preview.alt = "";
+    preview.src = jarramplasPreviewPath(variant);
+    button.append(preview);
+  });
+  button.addEventListener("click", onClick);
+  jarramplasOptions.appendChild(button);
+}
+
+function buildJarramplasButtons() {
+  jarramplasOptions.innerHTML = "";
+  addRandomJarramplasTile(() => {
+    state.pendingJarramplasIndex = null;
+    trackEvent("jarramplas_selected", { selected_jarramplas: "Aleatorio" });
+    startGame(state.pendingDifficulty, state.pendingScenarioIndex, null);
+  });
+  assets.jarramplasVariants.forEach((variant, index) => {
+    addJarramplasTile(variant.name, jarramplasPreviewPath(variant), () => {
+      state.pendingJarramplasIndex = index;
+      trackEvent("jarramplas_selected", { selected_jarramplas: variant.name });
+      startGame(state.pendingDifficulty, state.pendingScenarioIndex, index);
+    });
   });
 }
 
@@ -390,14 +463,18 @@ function chooseLevel(difficulty) {
   showScreen("scenario");
 }
 
-function startGame(difficulty, backgroundIndex = 0) {
+function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   if (!assets.ready) return;
   const config = difficultyConfig[difficulty];
   const type = gameTypeConfig[state.pendingGameType];
-  const jarramplasVariant = assets.jarramplasVariants[Math.floor(Math.random() * assets.jarramplasVariants.length)];
-  assets.jarramplas = jarramplasVariant?.frames || [];
+  const selectedJarramplasIndex = Number.isInteger(jarramplasIndex)
+    ? jarramplasIndex
+    : Math.floor(Math.random() * assets.jarramplasVariants.length);
+  const jarramplasVariant = assets.jarramplasVariants[selectedJarramplasIndex];
+  assets.jarramplas = jarramplasVariant?.frames || emptyJarramplasFrames();
   assets.background = assets.backgrounds[backgroundIndex] || null;
   state.scenarioIndex = backgroundIndex;
+  state.jarramplasIndex = jarramplasIndex;
   state.mode = "playing";
   state.gameType = state.pendingGameType;
   state.difficulty = difficulty;
@@ -431,6 +508,7 @@ function startGame(difficulty, backgroundIndex = 0) {
   state.jarramplas.targetY = state.jarramplas.y;
   state.jarramplas.vx = 0;
   state.jarramplas.vy = 0;
+  state.jarramplas.direction = "down";
   state.jarramplas.nextMoveAt = 0;
   state.jarramplas.flash = 0;
   updateHud();
@@ -439,6 +517,7 @@ function startGame(difficulty, backgroundIndex = 0) {
   trackEvent("game_started", {
     people_count: config.people,
     record_score: getRecord(state.gameType, state.difficulty),
+    selected_jarramplas: jarramplasIndex === null ? "Aleatorio" : jarramplasVariant?.name || "",
   });
   showScreen(null);
   hud.classList.add("is-visible");
@@ -554,9 +633,10 @@ function restartGame() {
   const difficulty = state.difficulty;
   const gameType = state.gameType;
   const scenarioIndex = state.scenarioIndex;
+  const jarramplasIndex = state.jarramplasIndex;
   state.pendingGameType = gameType;
   trackEvent("game_restarted", { restart_from: state.mode });
-  startGame(difficulty, scenarioIndex);
+  startGame(difficulty, scenarioIndex, jarramplasIndex);
 }
 
 function goHome() {
@@ -719,6 +799,11 @@ function updateJarramplasMotion(now, dt) {
   if (speed > maxSpeed) {
     j.vx = (j.vx / speed) * maxSpeed;
     j.vy = (j.vy / speed) * maxSpeed;
+  }
+  if (speed > 8) {
+    j.direction = Math.abs(j.vx) > Math.abs(j.vy) * 1.15
+      ? (j.vx < 0 ? "left" : "right")
+      : (j.vy < 0 ? "up" : "down");
   }
   j.x += j.vx * dt;
   j.y += j.vy * dt;
@@ -1051,7 +1136,8 @@ function drawPerson(person) {
 
 function drawJarramplas() {
   const j = state.jarramplas;
-  const walkFrames = assets.jarramplas;
+  const directionFrames = assets.jarramplas[j.direction] || [];
+  const walkFrames = directionFrames.length ? directionFrames : (assets.jarramplas.down || []);
   const frame = walkFrames[j.walkFrame % Math.max(1, walkFrames.length)];
   drawSprite(frame, j.x, j.y + j.h, j.h);
   if (j.flash > 0) {
@@ -1268,6 +1354,10 @@ document.getElementById("backButton").addEventListener("click", () => {
 document.getElementById("levelBackButton").addEventListener("click", () => {
   state.mode = "select";
   showScreen("select");
+});
+document.getElementById("jarramplasBackButton").addEventListener("click", () => {
+  state.mode = "scenario";
+  showScreen("scenario");
 });
 document.getElementById("playAgainButton").addEventListener("click", restartGame);
 document.getElementById("againButton").addEventListener("click", () => {
