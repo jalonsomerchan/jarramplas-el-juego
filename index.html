@@ -4,12 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Jarramplas - El Juego Online de Piornal</title>
+  <meta name="description" content="Juega gratis a Jarramplas, el juego online inspirado en la fiesta de Piornal. Lanza nabos, esquiva a la gente y consigue la máxima puntuación.">
+  <meta name="theme-color" content="#151313">
+  <link rel="stylesheet" href="styles.css?v=20260501-1">
 </head>
 <body>
-<script type="module">
-import { APP_VERSION } from './config.js';
-const el = document.getElementById('gameVersion');
-if (el) el.textContent = `v${APP_VERSION}`;
-</script>
+  <div id="app">
+    <canvas id="game"></canvas>
+    <section id="start">
+      <p id="gameVersion">v1.0.0</p>
+    </section>
+  </div>
+  <script type="module" src="game.js?v=20260501-1"></script>
 </body>
 </html>
