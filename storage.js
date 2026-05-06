@@ -1,8 +1,25 @@
 import { STORAGE_KEYS } from "./config.js";
 
+function safeGetItem(key, fallback = null) {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getRecords() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.records) || "{}");
+    return JSON.parse(safeGetItem(STORAGE_KEYS.records, "{}") || "{}");
   } catch {
     return {};
   }
@@ -22,7 +39,7 @@ export function saveRecord(gameType, difficulty, score) {
   const key = recordKey(gameType, difficulty);
   const best = Math.max(Number(records[key] || 0), score);
   records[key] = best;
-  localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
+  safeSetItem(STORAGE_KEYS.records, JSON.stringify(records));
   return best;
 }
 
@@ -44,14 +61,14 @@ export function defaultStats() {
 
 export function getStats() {
   try {
-    return { ...defaultStats(), ...JSON.parse(localStorage.getItem(STORAGE_KEYS.stats) || "{}") };
+    return { ...defaultStats(), ...JSON.parse(safeGetItem(STORAGE_KEYS.stats, "{}") || "{}") };
   } catch {
     return defaultStats();
   }
 }
 
 function saveStats(stats) {
-  localStorage.setItem(STORAGE_KEYS.stats, JSON.stringify(stats));
+  safeSetItem(STORAGE_KEYS.stats, JSON.stringify(stats));
 }
 
 function bumpStatsBucket(stats, bucket, key, values) {
@@ -124,9 +141,9 @@ export function formatPercent(value, total) {
 }
 
 export function hasSeenTutorial() {
-  return localStorage.getItem(STORAGE_KEYS.tutorial) === "1";
+  return safeGetItem(STORAGE_KEYS.tutorial) === "1";
 }
 
 export function markTutorialSeen() {
-  localStorage.setItem(STORAGE_KEYS.tutorial, "1");
+  safeSetItem(STORAGE_KEYS.tutorial, "1");
 }
