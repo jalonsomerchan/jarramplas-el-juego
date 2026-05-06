@@ -1,113 +1,104 @@
-# 🎯 Jarramplas
+# 🎯 Jarramplas - El Juego
 
-<p align="center">
-  <img src="./assets/portada.png" width="900"/>
-</p>
+![status](https://img.shields.io/badge/status-active-success)
+![platform](https://img.shields.io/badge/platform-web-blue)
+![license](https://img.shields.io/badge/license-pending-lightgrey)
 
-<h1 align="center">Jarramplas — The Game</h1>
-
-<p align="center">
-  Arcade. Fast. Addictive.
-</p>
-
-<p align="center">
-  <a href="https://jarramplas.vercel.app/"><b>🎮 PLAY NOW</b></a>
-</p>
+> Juego arcade web inspirado en la fiesta tradicional de Jarramplas (Piornal, Extremadura).
 
 ---
 
-<p align="center">
-  <img src="https://img.shields.io/badge/experience-mobile%20first-black">
-  <img src="https://img.shields.io/badge/performance-60fps-success">
-  <img src="https://img.shields.io/badge/engine-canvas-blue">
-  <img src="https://img.shields.io/badge/status-live-brightgreen">
-</p>
+## 🕹️ Demo
+
+👉 https://jarramplas.vercel.app/
 
 ---
 
-## 🎥 Experience
+## 📸 Capturas
 
-<p align="center">
-  <img src="./assets/gameplay.gif" width="800" />
-</p>
+![Gameplay](./assets/portada.png)
 
 ---
 
-## ⚡ Concept
+## 🚀 Características
 
-Throw turnips. Hit Jarramplas. Avoid people.
-
-Simple rules → addictive gameplay.
+- 🎯 Gameplay arcade rápido y adictivo
+- 📱 Optimizado para móvil (touch)
+- 🎮 Varios modos de juego
+- 🏆 Sistema de récords
+- 📊 Estadísticas persistentes
+- 🔥 Sharing viral integrado
+- 🌍 Preparado para leaderboard global
 
 ---
 
-## 🎮 Gameplay Loop
+## 🧠 Cómo jugar
 
-```text
-Aim → Throw → Hit → Score → Repeat
+1. Pulsa **Jugar**
+2. Elige modo
+3. Selecciona nivel
+4. Arrastra y lanza el nabo
+5. Golpea a Jarramplas y evita a la gente
+
+---
+
+## ⚙️ Tecnologías
+
+- HTML5 Canvas
+- JavaScript Vanilla
+- LocalStorage
+- Firebase (opcional leaderboard)
+
+---
+
+## 📁 Estructura
+
+```
+index.html
+styles.css
+game.js
+config.js
+storage.js
+assets/
 ```
 
 ---
 
-## 🚀 Features
+## 🚀 Desarrollo
 
-- Instant play
-- No loading screens
-- Touch optimized
-- Multiple game modes
-- Score system
-- Viral sharing
-- Leaderboards ready
-
----
-
-## 🧠 Design Philosophy
-
-- Zero friction
-- Immediate feedback
-- Mobile-first interaction
-- Arcade feel
-
----
-
-## 📱 Built For
-
-- Mobile browsers
-- Fast sessions
-- Replayability
-
----
-
-## 🧱 Stack
-
-- HTML5 Canvas
-- Vanilla JS
-- LocalStorage
+```bash
+python3 -m http.server
+```
 
 ---
 
 ## 🧭 Roadmap
 
-- Combos
-- Daily challenges
-- Global leaderboard
-- Sound design
-- Visual FX
+- [x] Juego base
+- [x] Sharing viral
+- [x] Leaderboard local
+- [ ] Leaderboard global
+- [ ] Sistema de combos
+- [ ] Misiones diarias
+- [ ] PWA
 
 ---
 
-## ❤️ Cultural Origin
+## 💡 Ideas futuras
 
-Inspired by Jarramplas festival (Spain).
+- 🎮 Modo frenesí
+- 🧠 IA de movimiento
+- 🔊 Sonido y música
+- 👥 Retos entre amigos
 
 ---
 
-## 👤 Author
+## 👤 Autor
 
 Jorge Alonso
 
 ---
 
-<p align="center">
-  ⭐ Star this repo if you like it
-</p>
+## ❤️ Inspiración
+
+Basado en la fiesta tradicional de Jarramplas en Piornal.
