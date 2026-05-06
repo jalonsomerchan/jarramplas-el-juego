@@ -33,6 +33,23 @@
 
 ---
 
+## 🎨 Sprites & Assets
+
+<p align="center">
+  <img src="./assets/portada.png" width="250" />
+  <img src="./assets/nabo.png" width="120" />
+</p>
+
+El juego utiliza sprites en estilo pixel art inspirados en videojuegos clásicos.
+
+Incluyen:
+- Animaciones de personajes
+- Jarramplas con variantes
+- Objetos interactivos (nabos)
+- Escenarios optimizados para canvas
+
+---
+
 ## ⚡ Concept
 
 Throw turnips. Hit Jarramplas. Avoid people.
@@ -70,6 +87,28 @@ Aim → Throw → Hit → Score → Repeat
 
 ---
 
+## 🏛️ La fiesta de Jarramplas (Piornal)
+
+Jarramplas es una de las fiestas más emblemáticas de Extremadura, celebrada en Piornal (Cáceres) cada mes de enero.
+
+### 🎭 Tradición
+
+Un vecino del pueblo se viste como Jarramplas y recorre las calles mientras los habitantes le lanzan nabos.
+
+### 🔥 Significado
+
+- Resistencia
+- Sacrificio
+- Identidad cultural
+
+### 📍 Localización
+
+Piornal es el pueblo más alto de Extremadura, situado en el Valle del Jerte.
+
+La fiesta está declarada de Interés Turístico Nacional.
+
+---
+
 ## 📱 Built For
 
 - Mobile browsers
@@ -93,12 +132,6 @@ Aim → Throw → Hit → Score → Repeat
 - Global leaderboard
 - Sound design
 - Visual FX
-
----
-
-## ❤️ Cultural Origin
-
-Inspired by Jarramplas festival (Spain).
 
 ---
 
