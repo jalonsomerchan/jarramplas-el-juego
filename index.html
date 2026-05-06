@@ -9,7 +9,13 @@
   <meta name="author" content="Jarramplas - El Juego">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#151313">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Jarramplas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="canonical" href="https://jarramplas.vercel.app/">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 
   <meta property="og:locale" content="es_ES">
   <meta property="og:type" content="website">
@@ -199,6 +205,11 @@
 
   <script>
     window.JARRAMPLAS_GA_ID = "G-K0GLRGX6TE";
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("service-worker.js").catch(() => {});
+      });
+    }
   </script>
   <script type="module" src="game.js?v=20260501-1"></script>
 </body>

@@ -1384,6 +1384,9 @@ document.getElementById("pauseButton").addEventListener("click", pauseGame);
 document.getElementById("resumeButton").addEventListener("click", resumeGame);
 document.getElementById("restartButton").addEventListener("click", restartGame);
 document.getElementById("homeButton").addEventListener("click", goHome);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) pauseGame();
+});
 document.querySelectorAll("[data-game-type]").forEach((button) => {
   button.addEventListener("click", () => chooseGameType(button.dataset.gameType));
 });
