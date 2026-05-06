@@ -1,0 +1,21 @@
+{
+  "name": "Jarramplas - El Juego",
+  "short_name": "Jarramplas",
+  "description": "Juego online gratuito inspirado en la fiesta de Jarramplas de Piornal.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#151313",
+  "theme_color": "#151313",
+  "lang": "es",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/assets/portada.png",
+      "sizes": "1672x941",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
