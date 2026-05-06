@@ -30,6 +30,7 @@ const ctx = canvas.getContext("2d");
 const hud = document.getElementById("hud");
 const scoreEl = document.getElementById("score");
 const timeEl = document.getElementById("time");
+const comboEl = document.getElementById("combo");
 const recordEl = document.getElementById("record");
 const loadingScreen = document.getElementById("loading");
 const loadingBar = document.getElementById("loadingBar");
@@ -85,6 +86,8 @@ const state = {
   crowdTurnipsThrown: 0,
   scoreFromHits: 0,
   peoplePenalty: 0,
+  comboCount: 0,
+  comboMultiplier: 1,
   timeLeft: 60,
   elapsed: 0,
   totalPaused: 0,
@@ -494,6 +497,8 @@ function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   state.crowdTurnipsThrown = 0;
   state.scoreFromHits = 0;
   state.peoplePenalty = 0;
+  state.comboCount = 0;
+  state.comboMultiplier = 1;
   state.timeLeft = type.duration || 0;
   state.elapsed = 0;
   state.totalPaused = 0;
@@ -753,7 +758,20 @@ function updateHud() {
   const type = gameTypeConfig[state.gameType] || {};
   scoreEl.textContent = `${formatNumber(state.score)} pts`;
   timeEl.innerHTML = `${formatHudValue()}<small>${type.shortLabel || ""}</small>`;
+  comboEl.innerHTML = `x${formatNumber(state.comboMultiplier)}<small>${formatNumber(state.comboCount)} combo</small>`;
+  comboEl.classList.toggle("is-hot", state.comboMultiplier > 1);
   recordEl.innerHTML = `${formatNumber(getRecord(state.gameType, state.difficulty))} pts<small>Récord</small>`;
+}
+
+function advanceCombo() {
+  state.comboCount += 1;
+  state.comboMultiplier = Math.min(5, Math.max(1, state.comboCount));
+  return state.comboMultiplier;
+}
+
+function resetCombo() {
+  state.comboCount = 0;
+  state.comboMultiplier = 1;
 }
 
 function shareText(text) {
@@ -924,6 +942,7 @@ function update(now) {
           const hitBox = { x: person.x, y: person.y, w: person.w * 0.92, h: person.h * 0.86 };
           if (rectCircleHit(hitBox, turnip)) {
             turnip.hit = true;
+            resetCombo();
             state.peopleHits += 1;
             state.peoplePenalty += 5;
             state.score = Math.max(0, state.score - 5);
@@ -948,14 +967,18 @@ function update(now) {
         if (turnip.owner === "player") {
           state.jarramplasHits += 1;
           j.flash = 0.22;
+          const multiplier = advanceCombo();
           if (state.gameType === "survival") {
             state.jarramplasHealth = Math.max(0, state.jarramplasHealth - 10);
-            const gain = Math.max(1, Math.round(40 - state.elapsed * 0.35));
+            const baseGain = Math.max(1, Math.round(40 - state.elapsed * 0.35));
+            const gain = baseGain * multiplier;
             state.score += gain;
             state.scoreFromHits += gain;
-            addFloater(`+${gain}`, j.x, j.y + j.h * 0.18, "#f2df70");
+            addFloater(`+${gain} x${multiplier}`, j.x, j.y + j.h * 0.18, "#f2df70");
             trackEvent("jarramplas_hit", {
               hit_points: gain,
+              combo_count: state.comboCount,
+              combo_multiplier: multiplier,
               jarramplas_hits: state.jarramplasHits,
               score_after_hit: state.score,
             });
@@ -964,11 +987,14 @@ function update(now) {
               endGame();
             }
           } else {
-            state.score += 10;
-            state.scoreFromHits += 10;
-            addFloater("+10", j.x, j.y + j.h * 0.18, "#f2df70");
+            const gain = 10 * multiplier;
+            state.score += gain;
+            state.scoreFromHits += gain;
+            addFloater(`+${gain} x${multiplier}`, j.x, j.y + j.h * 0.18, "#f2df70");
             trackEvent("jarramplas_hit", {
-              hit_points: 10,
+              hit_points: gain,
+              combo_count: state.comboCount,
+              combo_multiplier: multiplier,
               jarramplas_hits: state.jarramplasHits,
               score_after_hit: state.score,
             });
@@ -976,7 +1002,11 @@ function update(now) {
         }
       }
     }
-    state.turnips = state.turnips.filter((t) => !t.hit && t.x > -90 && t.x < state.w + 90 && t.y > -120 && t.y < state.h + 120);
+    state.turnips = state.turnips.filter((t) => {
+      const inBounds = t.x > -90 && t.x < state.w + 90 && t.y > -120 && t.y < state.h + 120;
+      if (!t.hit && !inBounds && t.owner === "player") resetCombo();
+      return !t.hit && inBounds;
+    });
     if (state.gameType === "limitedTurnips" && state.turnipsLeft <= 0 && !state.turnips.some((t) => t.owner === "player")) {
       state.endReason = "sin nabos";
       endGame();
