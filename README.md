@@ -10,7 +10,7 @@
 
 ## 🕹️ Demo
 
-👉 https://jarramplas.vercel.app/
+👉 https://jarramplas.alon.one/
 
 ---
 
