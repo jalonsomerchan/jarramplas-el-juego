@@ -93,5 +93,5 @@ export const jarramplasVariants = [
 }));
 
 export const personIds = [1, 2, 3, 4, 5, 6];
-export const personFrameRoots = ["assets/personas/frames", "assets/personajes/frames"];
+export const personFrameRoots = ["assets/personajes/frames"];
 export const loadingAssetEstimate = jarramplasVariants.reduce((total, variant) => total + countJarramplasFrames(variant), 0) + personFrameRoots.length + (personIds.length * 6) + scenarios.length;
