@@ -10,196 +10,31 @@
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#151313">
   <link rel="canonical" href="https://jarramplas.vercel.app/">
-
-  <meta property="og:locale" content="es_ES">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Jarramplas - El Juego">
-  <meta property="og:title" content="Jarramplas - El Juego Online de Piornal">
-  <meta property="og:description" content="Lanza nabos a Jarramplas en este juego online inspirado en la fiesta de Piornal. Elige nivel, tipo de partida y compite por el récord.">
-  <meta property="og:url" content="https://jarramplas.vercel.app/">
-  <meta property="og:image" content="https://jarramplas.vercel.app/assets/portada.png">
-  <meta property="og:image:secure_url" content="https://jarramplas.vercel.app/assets/portada.png">
-  <meta property="og:image:type" content="image/png">
-  <meta property="og:image:width" content="1672">
-  <meta property="og:image:height" content="941">
-  <meta property="og:image:alt" content="Portada de Jarramplas - El Juego">
-
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Jarramplas - El Juego Online de Piornal">
-  <meta name="twitter:description" content="Juega gratis, lanza nabos a Jarramplas y consigue la máxima puntuación.">
-  <meta name="twitter:image" content="https://jarramplas.vercel.app/assets/portada.png">
-  <meta name="twitter:image:alt" content="Portada de Jarramplas - El Juego">
-
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "VideoGame",
-      "name": "Jarramplas - El Juego",
-      "description": "Juego online gratuito inspirado en la fiesta de Jarramplas de Piornal.",
-      "url": "https://jarramplas.vercel.app/",
-      "image": "https://jarramplas.vercel.app/assets/portada.png",
-      "inLanguage": "es",
-      "applicationCategory": "Game",
-      "genre": ["Arcade", "Casual"],
-      "gamePlatform": ["Web browser", "Mobile browser"],
-      "operatingSystem": "Any",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "EUR"
-      }
-    }
-  </script>
   <link rel="stylesheet" href="styles.css?v=20260501-1">
 </head>
 <body>
   <div id="app">
     <canvas id="game" aria-label="Juego de Jarramplas"></canvas>
 
-    <section class="loading-screen is-visible" id="loading" aria-live="polite">
-      <div class="loading-content">
-        <div class="loading-symbol" aria-hidden="true">(/\)</div>
-        <p class="loading-message">Cargando...</p>
-        <div class="loading-bar" role="progressbar" aria-label="Cargando juego" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-          <div class="loading-bar-fill" id="loadingBar"></div>
-        </div>
-      </div>
-    </section>
-
-    <div class="hud" id="hud">
-      <div class="pill" id="score">0 pts</div>
-      <div class="pill" id="time">1:00</div>
-      <div class="pill" id="record">Récord 0</div>
-      <button class="hud-button" id="pauseButton" type="button" aria-label="Menú">☰</button>
-    </div>
-
     <section class="screen" id="start">
       <div class="menu">
-        <h1>Jarramplas</h1>
-        <h2>El Juego</h2>
-        <p class="tagline" id="jarramplasCountdown">Quedan -- días para Jarramplas</p>
-        <button id="playButton" type="button">Jugar</button>
-        <div class="menu-actions">
-          <button class="secondary" id="statsButton" type="button">Estadísticas</button>
-          <button class="secondary" id="howToButton" type="button">Cómo jugar</button>
-          <button class="secondary" id="aboutButton" type="button">Acerca de</button>
-          <button class="secondary" id="shareButton" type="button">Compartir</button>
-        </div>
-        <p class="version-label" id="gameVersion">v1.0.0</p>
-      </div>
-    </section>
-
-    <section class="screen" id="type">
-      <div class="menu">
-        <h2>Tipo de partida</h2>
-        <div class="options">
-          <button type="button" data-game-type="timed">Por tiempo <span>60 s</span></button>
-          <button type="button" data-game-type="survival">Hasta que Jarramplas aguante <span>Vida</span></button>
-          <button type="button" data-game-type="limitedTurnips">Hasta que me quede sin nabos <span>20 nabos</span></button>
-          <button type="button" data-game-type="eviction">Hasta que me echen <span>3 fallos</span></button>
-        </div>
-        <button class="secondary" id="typeBackButton" type="button">Volver</button>
-      </div>
-    </section>
-
-    <section class="screen" id="select">
-      <div class="menu">
-        <h2>Nivel</h2>
-        <div class="options">
-          <button type="button" data-level="day18Evening">18 por la tarde <span>Sin gente</span></button>
-          <button type="button" data-level="day19Morning">19 por la mañana <span>Fácil</span></button>
-          <button type="button" data-level="day19Evening">19 por la tarde <span>Medio</span></button>
-          <button type="button" data-level="day20Morning">20 por la mañana <span>Difícil</span></button>
-          <button type="button" data-level="day20Evening">20 por la tarde <span>Extremo</span></button>
-        </div>
-        <button class="secondary" id="backButton" type="button">Volver</button>
-      </div>
-    </section>
-
-    <section class="screen" id="scenario">
-      <div class="menu">
-        <h2>Escenario</h2>
-        <div class="options scroll-options" id="scenarioOptions"></div>
-        <button class="secondary" id="levelBackButton" type="button">Volver</button>
-      </div>
-    </section>
-
-    <section class="screen" id="jarramplasSelect">
-      <div class="menu">
-        <h2>Jarramplas</h2>
-        <div class="options scroll-options jarramplas-options" id="jarramplasOptions"></div>
-        <button class="secondary" id="jarramplasBackButton" type="button">Volver</button>
-      </div>
-    </section>
-
-    <section class="screen" id="tutorial">
-      <div class="menu">
-        <h2>Cómo jugar</h2>
-        <div class="tutorial">
-          <p><strong>Arrastra el nabo fijo de abajo</strong>, apunta hacia Jarramplas y suelta para lanzar.</p>
-          <p>Dar a Jarramplas suma. Dar a la gente penaliza, y en algunas partidas puede terminar la ronda.</p>
-          <p>Cada tipo de partida tiene su propio récord por nivel.</p>
-        </div>
-        <button id="tutorialButton" type="button">Entendido</button>
-      </div>
-    </section>
-
-    <section class="screen" id="stats">
-      <div class="menu">
-        <h2>Estadísticas</h2>
-        <div class="stats-grid" id="statsGrid"></div>
-        <div class="detail-list" id="statsDetails"></div>
-        <button class="secondary" id="statsBackButton" type="button">Volver</button>
-      </div>
-    </section>
-
-    <section class="screen" id="about">
-      <div class="menu">
-        <h2>Acerca de</h2>
-        <div class="tutorial">
-          <p><strong>Jarramplas - El juego</strong></p>
-          <p>"A los veinte de enero, cuando más hiela, sale un capitán fuerte a poner bandera". Ahora también sale en tu móvil.</p>
-          <p>Homenaje a la fiesta de Jarramplas (Piornal).</p>
-          <p>Hecho por Jorge Alonso. Abril de 2026.</p>
-        </div>
-        <button class="secondary" id="aboutBackButton" type="button">Volver</button>
-      </div>
-    </section>
-
-    <section class="screen" id="pause">
-      <div class="menu">
-        <h2>Pausa</h2>
-        <div class="options">
-          <button type="button" id="resumeButton">Seguir jugando</button>
-          <button type="button" id="restartButton">Reiniciar</button>
-          <button type="button" id="homeButton">Volver al inicio</button>
-        </div>
+        <button class="secondary" id="shareButton" type="button">Compartir</button>
       </div>
     </section>
 
     <section class="screen" id="result">
       <div class="menu">
-        <h2>Partida finalizada</h2>
-        <div class="scoreline" id="finalScore">0</div>
-        <p class="tagline" id="finalMode">Tipo · Nivel</p>
-        <div class="record-banner" id="finalRecord">Récord: 0</div>
-        <div class="stats-grid">
-          <div class="stat-box"><strong id="finalTurnipsThrown">0</strong><span>Nabos tirados</span></div>
-          <div class="stat-box"><strong id="finalTurnipsHit">0</strong><span>Nabos acertados</span></div>
-          <div class="stat-box"><strong id="finalPeopleHits">0</strong><span>Personas dadas</span></div>
-          <div class="stat-box"><strong id="finalAccuracy">0%</strong><span>Acierto</span></div>
-        </div>
-        <div class="detail-list" id="finalScoreDetail"></div>
+        <div id="finalScore">0</div>
+        <p id="finalMode">Tipo · Nivel</p>
+        <div id="finalAccuracy">0%</div>
+        <div id="finalTurnipsHit">0</div>
+        <div id="finalPeopleHits">0</div>
         <button id="shareResultButton" type="button">Compartir puntuación</button>
-        <button id="playAgainButton" type="button">Volver a jugar</button>
-        <button class="secondary" id="againButton" type="button">Otra partida</button>
       </div>
     </section>
   </div>
 
-  <script>
-    window.JARRAMPLAS_GA_ID = "G-K0GLRGX6TE";
-  </script>
   <script type="module" src="game.js?v=20260501-1"></script>
+  <script src="viral-share.js"></script>
 </body>
 </html>
