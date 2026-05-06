@@ -115,6 +115,15 @@ const trackEvent = createEventTracker({
   difficultyConfig,
 });
 
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function maxPeopleHits() {
+  return finiteNumber(gameTypeConfig.eviction?.maxPeopleHits);
+}
+
 function updateLoadingBar(forcePercent = null) {
   const percent = forcePercent ?? Math.min(99, Math.round((loadingState.loaded / loadingState.total) * 100));
   if (loadingBar) loadingBar.style.width = `${percent}%`;
@@ -527,7 +536,12 @@ function endGame() {
   if (state.mode !== "playing") return;
   const previousBest = getRecord(state.gameType, state.difficulty);
   if (state.gameType === "survival") {
-    state.score = Math.max(0, Math.round(1200 - state.elapsed * 10 + state.jarramplasHits * 12 - state.peopleHits * 30));
+    state.score = Math.max(0, Math.round(
+      1200
+      - finiteNumber(state.elapsed) * 10
+      + finiteNumber(state.jarramplasHits) * 12
+      - finiteNumber(state.peopleHits) * 30
+    ));
   }
   const best = saveRecord(state.gameType, state.difficulty, state.score);
   const type = gameTypeConfig[state.gameType];
@@ -729,17 +743,17 @@ function launchOrigin() {
 }
 
 function formatHudValue() {
-  if (state.gameType === "timed") return formatTime(state.timeLeft);
-  if (state.gameType === "survival") return `${Math.max(0, Math.ceil(state.jarramplasHealth))}%`;
-  if (state.gameType === "limitedTurnips") return `${Math.max(0, state.turnipsLeft)} nabos`;
-  return `${Math.max(0, gameTypeConfig.eviction.maxPeopleHits - state.peopleHits)} avisos`;
+  if (state.gameType === "timed") return formatTime(finiteNumber(state.timeLeft));
+  if (state.gameType === "survival") return `${Math.max(0, Math.ceil(finiteNumber(state.jarramplasHealth)))}%`;
+  if (state.gameType === "limitedTurnips") return `${Math.max(0, finiteNumber(state.turnipsLeft))} nabos`;
+  return `${Math.max(0, maxPeopleHits() - finiteNumber(state.peopleHits))} avisos`;
 }
 
 function updateHud() {
-  const type = gameTypeConfig[state.gameType];
-  scoreEl.textContent = `${state.score} pts`;
-  timeEl.innerHTML = `${formatHudValue()}<small>${type.shortLabel}</small>`;
-  recordEl.innerHTML = `${getRecord(state.gameType, state.difficulty)} pts<small>Récord</small>`;
+  const type = gameTypeConfig[state.gameType] || {};
+  scoreEl.textContent = `${formatNumber(state.score)} pts`;
+  timeEl.innerHTML = `${formatHudValue()}<small>${type.shortLabel || ""}</small>`;
+  recordEl.innerHTML = `${formatNumber(getRecord(state.gameType, state.difficulty))} pts<small>Récord</small>`;
 }
 
 function shareText(text) {
@@ -918,7 +932,7 @@ function update(now) {
               people_hits: state.peopleHits,
               score_after_hit: state.score,
             });
-            if (state.gameType === "eviction" && state.peopleHits >= type.maxPeopleHits) {
+            if (state.gameType === "eviction" && finiteNumber(state.peopleHits) >= finiteNumber(type.maxPeopleHits)) {
               state.endReason = "expulsado";
               endGame();
             }

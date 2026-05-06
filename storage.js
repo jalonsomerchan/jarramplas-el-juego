@@ -12,15 +12,20 @@ function recordKey(gameType, difficulty) {
   return `${gameType}:${difficulty}`;
 }
 
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 export function getRecord(gameType, difficulty) {
   const records = getRecords();
-  return Number(records[recordKey(gameType, difficulty)] || 0);
+  return finiteNumber(records[recordKey(gameType, difficulty)]);
 }
 
 export function saveRecord(gameType, difficulty, score) {
   const records = getRecords();
   const key = recordKey(gameType, difficulty);
-  const best = Math.max(Number(records[key] || 0), score);
+  const best = Math.max(finiteNumber(records[key]), finiteNumber(score));
   records[key] = best;
   localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
   return best;
@@ -67,10 +72,10 @@ function bumpStatsBucket(stats, bucket, key, values) {
   };
   Object.entries(values).forEach(([name, value]) => {
     if (name === "bestScore") {
-      stats[bucket][key][name] = Math.max(stats[bucket][key][name] || 0, value);
+      stats[bucket][key][name] = Math.max(finiteNumber(stats[bucket][key][name]), finiteNumber(value));
       return;
     }
-    stats[bucket][key][name] = (stats[bucket][key][name] || 0) + value;
+    stats[bucket][key][name] = finiteNumber(stats[bucket][key][name]) + finiteNumber(value);
   });
 }
 
@@ -86,22 +91,22 @@ export function recordGameFinishStats(match) {
   const stats = getStats();
   const values = {
     gamesFinished: 1,
-    turnipsThrown: match.turnipsThrown,
-    turnipsHit: match.turnipsHit,
-    peopleHits: match.peopleHits,
-    totalScore: match.score,
-    bestScore: match.score,
+    turnipsThrown: finiteNumber(match.turnipsThrown),
+    turnipsHit: finiteNumber(match.turnipsHit),
+    peopleHits: finiteNumber(match.peopleHits),
+    totalScore: finiteNumber(match.score),
+    bestScore: finiteNumber(match.score),
   };
   stats.gamesFinished += 1;
-  stats.turnipsThrown += match.turnipsThrown;
-  stats.turnipsHit += match.turnipsHit;
-  stats.peopleHits += match.peopleHits;
-  stats.totalScore += match.score;
-  stats.bestScore = Math.max(stats.bestScore || 0, match.score);
-  stats.totalElapsed += match.elapsed;
+  stats.turnipsThrown = finiteNumber(stats.turnipsThrown) + values.turnipsThrown;
+  stats.turnipsHit = finiteNumber(stats.turnipsHit) + values.turnipsHit;
+  stats.peopleHits = finiteNumber(stats.peopleHits) + values.peopleHits;
+  stats.totalScore = finiteNumber(stats.totalScore) + values.totalScore;
+  stats.bestScore = Math.max(finiteNumber(stats.bestScore), values.bestScore);
+  stats.totalElapsed = finiteNumber(stats.totalElapsed) + finiteNumber(match.elapsed);
   stats.scores = [
     {
-      score: match.score,
+      score: values.totalScore,
       gameType: match.gameType,
       difficulty: match.difficulty,
       scenario: match.scenario,
@@ -115,12 +120,14 @@ export function recordGameFinishStats(match) {
 }
 
 export function formatNumber(value) {
-  return new Intl.NumberFormat("es-ES").format(Math.round(Number(value) || 0));
+  return new Intl.NumberFormat("es-ES").format(Math.round(finiteNumber(value)));
 }
 
 export function formatPercent(value, total) {
-  if (!total) return "0%";
-  return `${Math.round((value / total) * 100)}%`;
+  const number = Number(value);
+  const totalNumber = Number(total);
+  if (!Number.isFinite(number) || !Number.isFinite(totalNumber) || totalNumber <= 0) return "0%";
+  return `${Math.round((number / totalNumber) * 100)}%`;
 }
 
 export function hasSeenTutorial() {
