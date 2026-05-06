@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://jarramplas.alon.one/$1",
+      "permanent": true
+    }
+  ]
+}
