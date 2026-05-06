@@ -50,12 +50,14 @@ body {
   overflow: hidden;
   background: #131614;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 26px 90px rgba(0, 0, 0, 0.55);
+  margin: 0 auto;
 }
 
 @supports (height: 100dvh) {
   #app {
     height: 100dvh;
     min-height: 100dvh;
+    margin: 0 auto;
   }
 }
 
