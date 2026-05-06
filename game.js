@@ -141,22 +141,20 @@ function markAssetLoaded() {
 function loadImageFrame(path, label = null) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve({
-      img,
-      w: img.naturalWidth,
-      h: img.naturalHeight,
-      path,
-      name: label || fileLabel(path),
-    });
-    img.onerror = () => reject(new Error(`No se pudo cargar ${path}`));
-    img.onload = ((onload) => () => {
+    img.onload = () => {
       markAssetLoaded();
-      onload();
-    })(img.onload);
-    img.onerror = ((onerror) => () => {
+      resolve({
+        img,
+        w: img.naturalWidth,
+        h: img.naturalHeight,
+        path,
+        name: label || fileLabel(path),
+      });
+    };
+    img.onerror = () => {
       markAssetLoaded();
-      onerror();
-    })(img.onerror);
+      reject(new Error(`No se pudo cargar ${path}`));
+    };
     img.src = path;
   });
 }

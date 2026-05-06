@@ -1,4 +1,4 @@
-const CACHE_VERSION = "jarramplas-v20260506-2";
+const CACHE_VERSION = "jarramplas-v20260506-3";
 const CORE_CACHE = `${CACHE_VERSION}-core`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
