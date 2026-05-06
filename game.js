@@ -772,24 +772,79 @@ function resetCombo() {
   state.comboMultiplier = 1;
 }
 
-function shareText(text) {
+function showShareFeedback(button, message) {
+  if (!button) {
+    window.alert(message);
+    return;
+  }
+  const originalText = button.textContent;
+  button.textContent = message;
+  button.disabled = true;
+  window.setTimeout(() => {
+    button.textContent = originalText;
+    button.disabled = false;
+  }, 1600);
+}
+
+function copyWithLegacyFallback(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  textarea.remove();
+  return copied;
+}
+
+async function copyShareText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the legacy path for older Safari and locked-down contexts.
+    }
+  }
+  return copyWithLegacyFallback(text);
+}
+
+async function shareText(text, button = null) {
   const url = window.location.href.split("#")[0];
   const fullText = `${text} ${url}`;
   if (navigator.share) {
-    navigator.share({ title: shareTextConfig.gameTitle, text: fullText, url }).catch(() => {});
+    try {
+      await navigator.share({ title: shareTextConfig.gameTitle, text: fullText, url });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+
+  if (await copyShareText(fullText)) {
+    showShareFeedback(button, "Enlace copiado");
     return;
   }
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(fullText).catch(() => {});
-  }
+
+  window.prompt("Copia el enlace", fullText);
+  showShareFeedback(button, "Copiar enlace");
 }
 
-function shareGame() {
+function shareGame(event) {
   trackEvent("share_game");
-  shareText(shareTextConfig.gameShareText);
+  shareText(shareTextConfig.gameShareText, event?.currentTarget);
 }
 
-function shareResult() {
+function shareResult(event) {
   const type = gameTypeConfig[state.gameType];
   const difficulty = difficultyConfig[state.difficulty];
   trackEvent("share_result", { final_score: state.score });
@@ -797,7 +852,8 @@ function shareResult() {
     shareTextConfig.resultTemplate
       .replace("{points}", state.score)
       .replace("{level}", difficulty.shareLabel)
-      .replace("{type}", type.label)
+      .replace("{type}", type.label),
+    event?.currentTarget
   );
 }
 
