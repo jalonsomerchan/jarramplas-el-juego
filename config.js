@@ -52,6 +52,8 @@ export const STORAGE_KEYS = {
   records: "jarramplas.records.v1",
   stats: "jarramplas.stats.v1",
   tutorial: "jarramplas.tutorialSeen.v2",
+  leaderboard: "jarramplas.leaderboard.v1",
+  playerName: "jarramplas.playerName.v1",
 };
 
 const makeJarramplasFramePaths = (root, frameCount) => Array.from(

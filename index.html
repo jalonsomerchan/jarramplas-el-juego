@@ -156,6 +156,15 @@
         <h2>Estadísticas</h2>
         <div class="stats-grid" id="statsGrid"></div>
         <div class="detail-list" id="statsDetails"></div>
+        <div class="leaderboard-panel">
+          <h3>Ranking global</h3>
+          <div class="leaderboard-filters">
+            <select id="statsLeaderboardType" aria-label="Tipo de partida del ranking"></select>
+            <select id="statsLeaderboardDifficulty" aria-label="Nivel del ranking"></select>
+          </div>
+          <div class="leaderboard-status" id="statsLeaderboardStatus">Cargando ranking...</div>
+          <ol class="leaderboard-list" id="statsLeaderboard"></ol>
+        </div>
         <button class="secondary" id="statsBackButton" type="button">Volver</button>
       </div>
     </section>
@@ -197,6 +206,11 @@
           <div class="stat-box"><strong id="finalAccuracy">0%</strong><span>Acierto</span></div>
         </div>
         <div class="detail-list" id="finalScoreDetail"></div>
+        <div class="leaderboard-panel">
+          <h3>Top 10 de este modo</h3>
+          <div class="leaderboard-status" id="resultLeaderboardStatus">Guardando puntuación...</div>
+          <ol class="leaderboard-list" id="resultLeaderboard"></ol>
+        </div>
         <button id="shareResultButton" type="button">Compartir puntuación</button>
         <button id="playAgainButton" type="button">Volver a jugar</button>
         <button class="secondary" id="againButton" type="button">Otra partida</button>

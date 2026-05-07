@@ -1,4 +1,4 @@
-const CACHE_VERSION = "jarramplas-v20260506-7";
+const CACHE_VERSION = "jarramplas-v20260507-1";
 const CORE_CACHE = `${CACHE_VERSION}-core`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -9,6 +9,8 @@ const CORE_ASSETS = [
   "./game.js",
   "./config.js",
   "./storage.js",
+  "./leaderboard.js",
+  "./firebase-config.js",
   "./analytics.js",
   "./manifest.webmanifest",
   "./assets/portada.png",

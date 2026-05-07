@@ -15,14 +15,23 @@ import {
 import {
   formatNumber,
   formatPercent,
+  getLocalLeaderboard,
+  getPlayerName,
   getRecord,
   getStats,
   hasSeenTutorial,
   markTutorialSeen,
   recordGameFinishStats,
   recordGameStartStats,
+  saveLocalLeaderboardScore,
+  savePlayerName,
   saveRecord,
 } from "./storage.js";
+import {
+  fetchGlobalLeaderboard,
+  isGlobalLeaderboardConfigured,
+  submitGlobalScore,
+} from "./leaderboard.js";
 
 const app = document.getElementById("app");
 const canvas = document.getElementById("game");
@@ -32,6 +41,8 @@ const scoreEl = document.getElementById("score");
 const timeEl = document.getElementById("time");
 const comboEl = document.getElementById("combo");
 const recordEl = document.getElementById("record");
+const statsLeaderboardTypeEl = document.getElementById("statsLeaderboardType");
+const statsLeaderboardDifficultyEl = document.getElementById("statsLeaderboardDifficulty");
 const loadingScreen = document.getElementById("loading");
 const loadingBar = document.getElementById("loadingBar");
 const loadingProgress = loadingScreen?.querySelector(".loading-bar");
@@ -410,6 +421,119 @@ function detailRow(label, value) {
   return row;
 }
 
+function leaderboardEntry(scoreEntry, index) {
+  const item = document.createElement("li");
+  const rank = document.createElement("span");
+  const name = document.createElement("span");
+  const score = document.createElement("strong");
+  rank.className = "leaderboard-rank";
+  name.className = "leaderboard-name";
+  score.className = "leaderboard-score";
+  rank.textContent = `#${index + 1}`;
+  name.textContent = scoreEntry.playerName || "Jugador";
+  score.textContent = `${formatNumber(scoreEntry.score)} pts`;
+  item.append(rank, name, score);
+  return item;
+}
+
+function renderLeaderboardList(listEl, entries) {
+  listEl.innerHTML = "";
+  entries.slice(0, 10).forEach((entry, index) => {
+    listEl.append(leaderboardEntry(entry, index));
+  });
+}
+
+function leaderboardFallbackMessage() {
+  return isGlobalLeaderboardConfigured()
+    ? "No se pudo cargar Firebase. Mostrando ranking local."
+    : "Ranking local hasta configurar Firebase.";
+}
+
+async function refreshLeaderboard({ gameType, difficulty, listId, statusId }) {
+  const listEl = document.getElementById(listId);
+  const statusEl = document.getElementById(statusId);
+  if (!listEl || !statusEl) return;
+  const localEntries = getLocalLeaderboard(gameType, difficulty);
+  renderLeaderboardList(listEl, localEntries);
+  statusEl.textContent = "Cargando ranking...";
+  try {
+    const result = await fetchGlobalLeaderboard(gameType, difficulty, gameTypeConfig, difficultyConfig);
+    if (result.ok) {
+      renderLeaderboardList(listEl, result.entries);
+      statusEl.textContent = result.entries.length ? "Ranking global actualizado." : "Sin puntuaciones globales todavía.";
+      return;
+    }
+    statusEl.textContent = localEntries.length ? leaderboardFallbackMessage() : "Sin puntuaciones todavía.";
+  } catch {
+    statusEl.textContent = localEntries.length ? leaderboardFallbackMessage() : "Sin puntuaciones todavía.";
+  }
+}
+
+function populateLeaderboardFilters() {
+  if (!statsLeaderboardTypeEl || !statsLeaderboardDifficultyEl) return;
+  statsLeaderboardTypeEl.innerHTML = "";
+  statsLeaderboardDifficultyEl.innerHTML = "";
+  Object.entries(gameTypeConfig).forEach(([key, config]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = config.shortLabel || config.label;
+    statsLeaderboardTypeEl.append(option);
+  });
+  Object.entries(difficultyConfig).forEach(([key, config]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = config.label;
+    statsLeaderboardDifficultyEl.append(option);
+  });
+}
+
+function refreshStatsLeaderboard() {
+  refreshLeaderboard({
+    gameType: statsLeaderboardTypeEl?.value || state.pendingGameType,
+    difficulty: statsLeaderboardDifficultyEl?.value || state.pendingDifficulty,
+    listId: "statsLeaderboard",
+    statusId: "statsLeaderboardStatus",
+  });
+}
+
+function askPlayerName() {
+  const currentName = getPlayerName();
+  const nextName = window.prompt("Nombre para el ranking", currentName);
+  if (nextName === null) return currentName;
+  return savePlayerName(nextName);
+}
+
+async function submitResultToLeaderboard(match) {
+  const playerName = askPlayerName();
+  const accuracy = state.playerTurnipsThrown ? (state.jarramplasHits / state.playerTurnipsThrown) * 100 : 0;
+  const scoreEntry = saveLocalLeaderboardScore({
+    playerName,
+    score: match.score,
+    gameType: match.gameType,
+    difficulty: match.difficulty,
+    accuracy,
+    jarramplasHits: match.turnipsHit,
+    peopleHits: match.peopleHits,
+    createdAt: Date.now(),
+  });
+  const statusEl = document.getElementById("resultLeaderboardStatus");
+  if (statusEl) statusEl.textContent = "Guardando puntuación...";
+  try {
+    const result = await submitGlobalScore(scoreEntry, gameTypeConfig, difficultyConfig);
+    if (statusEl) {
+      statusEl.textContent = result.ok ? "Puntuación subida al ranking global." : leaderboardFallbackMessage();
+    }
+  } catch {
+    if (statusEl) statusEl.textContent = leaderboardFallbackMessage();
+  }
+  refreshLeaderboard({
+    gameType: match.gameType,
+    difficulty: match.difficulty,
+    listId: "resultLeaderboard",
+    statusId: "resultLeaderboardStatus",
+  });
+}
+
 function renderStatsScreen() {
   const stats = getStats();
   const grid = document.getElementById("statsGrid");
@@ -438,6 +562,9 @@ function renderStatsScreen() {
     const difficulty = difficultyConfig[entry.difficulty]?.shareLabel || entry.difficulty;
     details.append(detailRow(`Puntuación ${index + 1}: ${type} · ${difficulty}`, `${formatNumber(entry.score)} pts`));
   });
+  if (statsLeaderboardTypeEl) statsLeaderboardTypeEl.value = state.gameType || state.pendingGameType;
+  if (statsLeaderboardDifficultyEl) statsLeaderboardDifficultyEl.value = state.difficulty || state.pendingDifficulty;
+  refreshStatsLeaderboard();
 }
 
 function chooseGameType(gameType) {
@@ -577,6 +704,7 @@ function endGame() {
     crowd_turnips: state.crowdTurnipsThrown,
   });
   showScreen("result");
+  submitResultToLeaderboard(match);
 }
 
 function endReasonLabel() {
@@ -1390,6 +1518,7 @@ function onPointerEnd(event) {
 }
 
 applyLevelLabels();
+populateLeaderboardFilters();
 initAnalytics();
 trackEvent("app_loaded");
 
@@ -1468,6 +1597,8 @@ document.getElementById("pauseButton").addEventListener("click", pauseGame);
 document.getElementById("resumeButton").addEventListener("click", resumeGame);
 document.getElementById("restartButton").addEventListener("click", restartGame);
 document.getElementById("homeButton").addEventListener("click", goHome);
+statsLeaderboardTypeEl?.addEventListener("change", refreshStatsLeaderboard);
+statsLeaderboardDifficultyEl?.addEventListener("change", refreshStatsLeaderboard);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) pauseGame();
 });

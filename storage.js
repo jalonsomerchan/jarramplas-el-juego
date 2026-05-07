@@ -17,6 +17,13 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function sanitizePlayerName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 18) || "Jugador";
+}
+
 export function getRecord(gameType, difficulty) {
   const records = getRecords();
   return finiteNumber(records[recordKey(gameType, difficulty)]);
@@ -29,6 +36,63 @@ export function saveRecord(gameType, difficulty, score) {
   records[key] = best;
   localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
   return best;
+}
+
+export function getPlayerName() {
+  try {
+    return sanitizePlayerName(localStorage.getItem(STORAGE_KEYS.playerName));
+  } catch {
+    return "Jugador";
+  }
+}
+
+export function savePlayerName(playerName) {
+  const safeName = sanitizePlayerName(playerName);
+  localStorage.setItem(STORAGE_KEYS.playerName, safeName);
+  return safeName;
+}
+
+export function getLocalLeaderboard(gameType, difficulty) {
+  try {
+    const entries = JSON.parse(localStorage.getItem(STORAGE_KEYS.leaderboard) || "[]");
+    return entries
+      .filter((entry) => entry.gameType === gameType && entry.difficulty === difficulty)
+      .sort((a, b) => finiteNumber(b.score) - finiteNumber(a.score))
+      .slice(0, 10);
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalLeaderboardScore(scoreEntry) {
+  let entries = [];
+  try {
+    entries = JSON.parse(localStorage.getItem(STORAGE_KEYS.leaderboard) || "[]");
+  } catch {
+    entries = [];
+  }
+  const entry = {
+    playerName: sanitizePlayerName(scoreEntry.playerName),
+    score: Math.max(0, Math.min(999999, Math.round(finiteNumber(scoreEntry.score)))),
+    gameType: scoreEntry.gameType,
+    difficulty: scoreEntry.difficulty,
+    accuracy: Math.max(0, Math.min(100, Math.round(finiteNumber(scoreEntry.accuracy)))),
+    jarramplasHits: Math.max(0, Math.round(finiteNumber(scoreEntry.jarramplasHits))),
+    peopleHits: Math.max(0, Math.round(finiteNumber(scoreEntry.peopleHits))),
+    createdAt: finiteNumber(scoreEntry.createdAt, Date.now()),
+  };
+  entries = [entry, ...entries]
+    .filter((item) => item.gameType && item.difficulty)
+    .sort((a, b) => finiteNumber(b.score) - finiteNumber(a.score))
+    .filter((item, index, list) => (
+      list.filter((other, otherIndex) => (
+        otherIndex <= index
+        && other.gameType === item.gameType
+        && other.difficulty === item.difficulty
+      )).length <= 10
+    ));
+  localStorage.setItem(STORAGE_KEYS.leaderboard, JSON.stringify(entries));
+  return entry;
 }
 
 export function defaultStats() {

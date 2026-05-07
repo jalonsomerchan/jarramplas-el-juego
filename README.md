@@ -28,7 +28,7 @@
 - 🏆 Sistema de récords
 - 📊 Estadísticas persistentes
 - 🔥 Sharing viral integrado
-- 🌍 Preparado para leaderboard global
+- 🌍 Ranking global opcional con Firebase Firestore
 
 ---
 
@@ -70,6 +70,41 @@ assets/
 python3 -m http.server
 ```
 
+## 🌍 Ranking global con Firebase
+
+El juego funciona sin Firebase usando un ranking local en `localStorage`. Para activar el ranking global:
+
+1. Crea un proyecto de Firebase y una base de datos Firestore.
+2. Edita `firebase-config.js` y cambia `enabled` a `true`.
+3. Rellena la configuración pública web de Firebase (`apiKey`, `authDomain`, `projectId`, `appId`).
+4. Publica reglas de Firestore que limiten escrituras básicas.
+
+Ejemplo orientativo de reglas:
+
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /scores/{scoreId} {
+      allow read: if true;
+      allow create: if
+        request.resource.data.playerName is string
+        && request.resource.data.playerName.size() <= 18
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 999999
+        && request.resource.data.gameType in ["timed", "survival", "limitedTurnips", "eviction"]
+        && request.resource.data.difficulty in ["day18Evening", "day19Morning", "day19Evening", "day20Morning", "day20Evening"]
+        && request.resource.data.accuracy >= 0
+        && request.resource.data.accuracy <= 100;
+      allow update, delete: if false;
+    }
+  }
+}
+```
+
+La consulta global filtra por `gameType` y `difficulty`, ordena por `score` y muestra el top 10. Si Firestore no está configurado o falla, la interfaz muestra el ranking local y el juego sigue funcionando.
+
 ---
 
 ## 🧭 Roadmap
@@ -77,7 +112,7 @@ python3 -m http.server
 - [x] Juego base
 - [x] Sharing viral
 - [x] Leaderboard local
-- [ ] Leaderboard global
+- [x] Leaderboard global
 - [ ] Sistema de combos
 - [ ] Misiones diarias
 - [ ] PWA
