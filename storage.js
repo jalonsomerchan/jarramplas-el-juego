@@ -17,11 +17,15 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+export function generateRandomPlayerName() {
+  return `Player${Math.floor(10000 + Math.random() * 90000)}`;
+}
+
 function sanitizePlayerName(value) {
   return String(value || "")
     .trim()
     .replace(/\s+/g, " ")
-    .slice(0, 18) || "Jugador";
+    .slice(0, 18);
 }
 
 export function getRecord(gameType, difficulty) {
@@ -40,14 +44,18 @@ export function saveRecord(gameType, difficulty, score) {
 
 export function getPlayerName() {
   try {
-    return sanitizePlayerName(localStorage.getItem(STORAGE_KEYS.playerName));
+    const storedName = sanitizePlayerName(localStorage.getItem(STORAGE_KEYS.playerName));
+    if (storedName) return storedName;
+    const randomName = generateRandomPlayerName();
+    localStorage.setItem(STORAGE_KEYS.playerName, randomName);
+    return randomName;
   } catch {
-    return "Jugador";
+    return generateRandomPlayerName();
   }
 }
 
 export function savePlayerName(playerName) {
-  const safeName = sanitizePlayerName(playerName);
+  const safeName = sanitizePlayerName(playerName) || generateRandomPlayerName();
   localStorage.setItem(STORAGE_KEYS.playerName, safeName);
   return safeName;
 }
@@ -72,7 +80,7 @@ export function saveLocalLeaderboardScore(scoreEntry) {
     entries = [];
   }
   const entry = {
-    playerName: sanitizePlayerName(scoreEntry.playerName),
+    playerName: sanitizePlayerName(scoreEntry.playerName) || generateRandomPlayerName(),
     score: Math.max(0, Math.min(999999, Math.round(finiteNumber(scoreEntry.score)))),
     gameType: scoreEntry.gameType,
     difficulty: scoreEntry.difficulty,

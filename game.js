@@ -47,6 +47,7 @@ const loadingScreen = document.getElementById("loading");
 const loadingBar = document.getElementById("loadingBar");
 const loadingProgress = loadingScreen?.querySelector(".loading-bar");
 const playButton = document.getElementById("playButton");
+const playerNameInput = document.getElementById("playerNameInput");
 const jarramplasCountdownEl = document.getElementById("jarramplasCountdown");
 const gameVersionEl = document.getElementById("gameVersion");
 const scenarioOptions = document.getElementById("scenarioOptions");
@@ -496,15 +497,19 @@ function refreshStatsLeaderboard() {
   });
 }
 
-function askPlayerName() {
-  const currentName = getPlayerName();
-  const nextName = window.prompt("Nombre para el ranking", currentName);
-  if (nextName === null) return currentName;
-  return savePlayerName(nextName);
+function syncPlayerNameInput() {
+  if (!playerNameInput) return;
+  playerNameInput.value = getPlayerName();
+}
+
+function updatePlayerName(value) {
+  const safeName = savePlayerName(value);
+  if (playerNameInput) playerNameInput.value = safeName;
+  return safeName;
 }
 
 async function submitResultToLeaderboard(match) {
-  const playerName = askPlayerName();
+  const playerName = getPlayerName();
   const accuracy = state.playerTurnipsThrown ? (state.jarramplasHits / state.playerTurnipsThrown) * 100 : 0;
   const scoreEntry = saveLocalLeaderboardScore({
     playerName,
@@ -1523,6 +1528,7 @@ initAnalytics();
 trackEvent("app_loaded");
 
 playButton.addEventListener("click", () => {
+  updatePlayerName(playerNameInput?.value || getPlayerName());
   trackEvent("menu_play_clicked");
   if (!hasSeenTutorial()) {
     state.tutorialNextScreen = "type";
@@ -1532,6 +1538,15 @@ playButton.addEventListener("click", () => {
   }
   state.mode = "type";
   showScreen("type");
+});
+playerNameInput?.addEventListener("change", () => {
+  updatePlayerName(playerNameInput.value);
+});
+playerNameInput?.addEventListener("input", () => {
+  if (playerNameInput.value.trim()) savePlayerName(playerNameInput.value);
+});
+playerNameInput?.addEventListener("blur", () => {
+  updatePlayerName(playerNameInput.value);
 });
 document.getElementById("statsButton").addEventListener("click", () => {
   renderStatsScreen();
@@ -1618,6 +1633,7 @@ window.addEventListener("mouseup", onPointerEnd);
 window.addEventListener("resize", resize);
 
 updateJarramplasCountdown();
+syncPlayerNameInput();
 if (gameVersionEl) gameVersionEl.textContent = `v${APP_VERSION}`;
 resize();
 loadAssets().catch((error) => {
