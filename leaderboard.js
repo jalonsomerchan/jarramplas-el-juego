@@ -85,16 +85,31 @@ export async function fetchGlobalLeaderboard(gameType, difficulty, gameTypeConfi
     return { ok: false, reason: "invalid-filter", entries: [] };
   }
   const scoresRef = state.firestore.collection(state.db, firebaseConfig.collectionName || "scores");
-  const scoresQuery = state.firestore.query(
-    scoresRef,
-    state.firestore.where("gameType", "==", gameType),
-    state.firestore.where("difficulty", "==", difficulty),
-    state.firestore.orderBy("score", "desc"),
-    state.firestore.limit(10)
-  );
-  const snapshot = await state.firestore.getDocs(scoresQuery);
+  let snapshot;
+  try {
+    const scoresQuery = state.firestore.query(
+      scoresRef,
+      state.firestore.where("gameType", "==", gameType),
+      state.firestore.where("difficulty", "==", difficulty),
+      state.firestore.orderBy("score", "desc"),
+      state.firestore.limit(10)
+    );
+    snapshot = await state.firestore.getDocs(scoresQuery);
+  } catch (error) {
+    if (error?.code !== "failed-precondition") throw error;
+    const fallbackQuery = state.firestore.query(
+      scoresRef,
+      state.firestore.where("gameType", "==", gameType)
+    );
+    snapshot = await state.firestore.getDocs(fallbackQuery);
+  }
+  const entries = snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .filter((entry) => entry.gameType === gameType && entry.difficulty === difficulty)
+    .sort((a, b) => finiteNumber(b.score) - finiteNumber(a.score))
+    .slice(0, 10);
   return {
     ok: true,
-    entries: snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+    entries,
   };
 }

@@ -66,6 +66,10 @@ const screens = {
 };
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const MAX_ACTIVE_PEOPLE = 16;
+const MAX_ACTIVE_TURNIPS = 42;
+const MAX_ACTIVE_FLOATERS = 24;
+const MAX_ACTIVE_PARTICLES = 180;
 const assets = {
   ready: false,
   jarramplas: { down: [], left: [], right: [], up: [] },
@@ -122,6 +126,17 @@ const state = {
   jarramplasIndex: null,
   tutorialNextScreen: "type",
 };
+
+function trimRuntimeArray(items, maxItems) {
+  if (items.length > maxItems) items.splice(0, items.length - maxItems);
+}
+
+function enforceRuntimeLimits() {
+  trimRuntimeArray(state.people, MAX_ACTIVE_PEOPLE);
+  trimRuntimeArray(state.turnips, MAX_ACTIVE_TURNIPS);
+  trimRuntimeArray(state.floaters, MAX_ACTIVE_FLOATERS);
+  trimRuntimeArray(state.particles, MAX_ACTIVE_PARTICLES);
+}
 
 const trackEvent = createEventTracker({
   getState: () => state,
@@ -450,6 +465,11 @@ function leaderboardFallbackMessage() {
     : "Ranking local hasta configurar Firebase.";
 }
 
+function leaderboardUnavailableMessage(localEntries) {
+  if (isGlobalLeaderboardConfigured()) return leaderboardFallbackMessage();
+  return localEntries.length ? leaderboardFallbackMessage() : "Sin puntuaciones todavía.";
+}
+
 async function refreshLeaderboard({ gameType, difficulty, listId, statusId }) {
   const listEl = document.getElementById(listId);
   const statusEl = document.getElementById(statusId);
@@ -464,9 +484,10 @@ async function refreshLeaderboard({ gameType, difficulty, listId, statusId }) {
       statusEl.textContent = result.entries.length ? "Ranking global actualizado." : "Sin puntuaciones globales todavía.";
       return;
     }
-    statusEl.textContent = localEntries.length ? leaderboardFallbackMessage() : "Sin puntuaciones todavía.";
-  } catch {
-    statusEl.textContent = localEntries.length ? leaderboardFallbackMessage() : "Sin puntuaciones todavía.";
+    statusEl.textContent = leaderboardUnavailableMessage(localEntries);
+  } catch (error) {
+    console.warn("No se pudo cargar el ranking global de Firebase.", error);
+    statusEl.textContent = leaderboardUnavailableMessage(localEntries);
   }
 }
 
@@ -528,7 +549,8 @@ async function submitResultToLeaderboard(match) {
     if (statusEl) {
       statusEl.textContent = result.ok ? "Puntuación subida al ranking global." : leaderboardFallbackMessage();
     }
-  } catch {
+  } catch (error) {
+    console.warn("No se pudo subir la puntuación a Firebase.", error);
     if (statusEl) statusEl.textContent = leaderboardFallbackMessage();
   }
   refreshLeaderboard({
@@ -826,6 +848,7 @@ function spawnPerson(initial = false) {
   };
   updatePersonFacing(person);
   state.people.push(person);
+  trimRuntimeArray(state.people, MAX_ACTIVE_PEOPLE);
 }
 
 function updatePersonFacing(person) {
@@ -843,6 +866,7 @@ function updatePersonFacing(person) {
 
 function addFloater(text, x, y, color) {
   state.floaters.push({ text, x, y, color, life: 0.82, vy: -58 });
+  trimRuntimeArray(state.floaters, MAX_ACTIVE_FLOATERS);
 }
 
 function addJarramplasImpact(x, y, owner) {
@@ -862,6 +886,7 @@ function addJarramplasImpact(x, y, owner) {
       maxLife: impactEffectConfig.duration,
     });
   }
+  trimRuntimeArray(state.particles, MAX_ACTIVE_PARTICLES);
 }
 
 function formatTime(seconds) {
@@ -1063,6 +1088,7 @@ function launchTurnip(from, to, owner) {
     owner,
     hit: false,
   });
+  trimRuntimeArray(state.turnips, MAX_ACTIVE_TURNIPS);
   updateHud();
 }
 
@@ -1194,6 +1220,7 @@ function update(now) {
       if (!t.hit && !inBounds && t.owner === "player") resetCombo();
       return !t.hit && inBounds;
     });
+    enforceRuntimeLimits();
     if (state.gameType === "limitedTurnips" && state.turnipsLeft <= 0 && !state.turnips.some((t) => t.owner === "player")) {
       state.endReason = "sin nabos";
       endGame();
@@ -1214,6 +1241,7 @@ function update(now) {
     particle.vx *= Math.pow(0.12, dt);
   }
   state.particles = state.particles.filter((particle) => particle.life > 0);
+  enforceRuntimeLimits();
 }
 
 function drawSprite(frame, x, y, h, flip = false, alpha = 1) {
