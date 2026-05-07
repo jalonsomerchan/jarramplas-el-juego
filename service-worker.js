@@ -1,4 +1,4 @@
-const CACHE_VERSION = "jarramplas-v20260507-1";
+const CACHE_VERSION = "jarramplas-v20260507-4";
 const CORE_CACHE = `${CACHE_VERSION}-core`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -61,9 +61,12 @@ function isLocalRequest(request) {
 function shouldRuntimeCache(request) {
   const { pathname } = new URL(request.url);
   return pathname.endsWith(".png")
-    || pathname.endsWith(".css")
-    || pathname.endsWith(".js")
     || pathname.endsWith(".webmanifest");
+}
+
+function shouldNetworkFirstAsset(request) {
+  const { pathname } = new URL(request.url);
+  return pathname.endsWith(".css") || pathname.endsWith(".js");
 }
 
 async function cacheFirst(request) {
@@ -91,12 +94,30 @@ async function networkFirstPage(request) {
   }
 }
 
+async function networkFirstAsset(request) {
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      const cache = await caches.open(ASSET_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return caches.match(request, { ignoreSearch: true });
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET" || !isLocalRequest(request)) return;
 
   if (request.mode === "navigate") {
     event.respondWith(networkFirstPage(request));
+    return;
+  }
+
+  if (shouldNetworkFirstAsset(request)) {
+    event.respondWith(networkFirstAsset(request));
     return;
   }
 

@@ -29,6 +29,7 @@ import {
 } from "./storage.js";
 import {
   fetchGlobalLeaderboard,
+  firebaseErrorMessage,
   isGlobalLeaderboardConfigured,
   submitGlobalScore,
 } from "./leaderboard.js";
@@ -487,7 +488,9 @@ async function refreshLeaderboard({ gameType, difficulty, listId, statusId }) {
     statusEl.textContent = leaderboardUnavailableMessage(localEntries);
   } catch (error) {
     console.warn("No se pudo cargar el ranking global de Firebase.", error);
-    statusEl.textContent = leaderboardUnavailableMessage(localEntries);
+    statusEl.textContent = isGlobalLeaderboardConfigured()
+      ? firebaseErrorMessage(error)
+      : leaderboardUnavailableMessage(localEntries);
   }
 }
 
@@ -551,7 +554,7 @@ async function submitResultToLeaderboard(match) {
     }
   } catch (error) {
     console.warn("No se pudo subir la puntuación a Firebase.", error);
-    if (statusEl) statusEl.textContent = leaderboardFallbackMessage();
+    if (statusEl) statusEl.textContent = firebaseErrorMessage(error);
   }
   refreshLeaderboard({
     gameType: match.gameType,

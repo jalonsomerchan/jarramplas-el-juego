@@ -77,7 +77,8 @@ El juego funciona sin Firebase usando un ranking local en `localStorage`. Para a
 1. Crea un proyecto de Firebase y una base de datos Firestore.
 2. Edita `firebase-config.js` y cambia `enabled` a `true`.
 3. Rellena la configuración pública web de Firebase (`apiKey`, `authDomain`, `projectId`, `appId`).
-4. Publica reglas de Firestore que limiten escrituras básicas.
+4. Activa Authentication > Sign-in method > Anonymous.
+5. Publica reglas de Firestore que limiten escrituras básicas a usuarios autenticados.
 
 Ejemplo orientativo de reglas:
 
@@ -88,7 +89,8 @@ service cloud.firestore {
     match /scores/{scoreId} {
       allow read: if true;
       allow create: if
-        request.resource.data.playerName is string
+        request.auth != null
+        && request.resource.data.playerName is string
         && request.resource.data.playerName.size() <= 18
         && request.resource.data.score is int
         && request.resource.data.score >= 0
@@ -96,7 +98,10 @@ service cloud.firestore {
         && request.resource.data.gameType in ["timed", "survival", "limitedTurnips", "eviction"]
         && request.resource.data.difficulty in ["day18Evening", "day19Morning", "day19Evening", "day20Morning", "day20Evening"]
         && request.resource.data.accuracy >= 0
-        && request.resource.data.accuracy <= 100;
+        && request.resource.data.accuracy <= 100
+        && request.resource.data.jarramplasHits >= 0
+        && request.resource.data.peopleHits >= 0
+        && request.resource.data.createdAt is int;
       allow update, delete: if false;
     }
   }
