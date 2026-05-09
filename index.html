@@ -56,7 +56,7 @@
       }
     }
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260507-1">
+  <link rel="stylesheet" href="styles.css?v=20260509-1">
 </head>
 <body>
   <div id="app">
@@ -81,22 +81,26 @@
     </div>
 
     <section class="screen" id="start">
-      <div class="menu">
-        <h1>Jarramplas</h1>
-        <h2>El Juego</h2>
-        <p class="tagline" id="jarramplasCountdown">Quedan -- días para Jarramplas</p>
-        <div class="player-name-panel">
-          <label for="playerNameInput">Tu nombre es...</label>
-          <input id="playerNameInput" type="text" maxlength="18" autocomplete="nickname" inputmode="text" aria-label="Nombre del jugador">
+      <div class="menu home-menu">
+        <header class="home-brand">
+          <h1>Jarramplas</h1>
+          <h2>El Juego</h2>
+          <p class="tagline" id="jarramplasCountdown">-- días · --:--:--</p>
+        </header>
+        <div class="menu-panel">
+          <div class="player-name-panel">
+            <label for="playerNameInput">Tu nombre es...</label>
+            <input id="playerNameInput" type="text" maxlength="18" autocomplete="nickname" inputmode="text" aria-label="Nombre del jugador">
+          </div>
+          <button id="playButton" type="button">Jugar</button>
+          <div class="menu-actions">
+            <button class="secondary" id="statsButton" type="button">Estadísticas</button>
+            <button class="secondary" id="howToButton" type="button">Cómo jugar</button>
+            <button class="secondary" id="aboutButton" type="button">Acerca de</button>
+            <button class="secondary" id="shareButton" type="button">Compartir</button>
+          </div>
+          <p class="version-label" id="gameVersion">v.2.0.0</p>
         </div>
-        <button id="playButton" type="button">Jugar</button>
-        <div class="menu-actions">
-          <button class="secondary" id="statsButton" type="button">Estadísticas</button>
-          <button class="secondary" id="howToButton" type="button">Cómo jugar</button>
-          <button class="secondary" id="aboutButton" type="button">Acerca de</button>
-          <button class="secondary" id="shareButton" type="button">Compartir</button>
-        </div>
-        <p class="version-label" id="gameVersion">v1.3.0</p>
       </div>
     </section>
 
@@ -230,6 +234,6 @@
       });
     }
   </script>
-  <script type="module" src="game.js?v=20260507-2"></script>
+  <script type="module" src="game.js?v=20260509-1"></script>
 </body>
 </html>

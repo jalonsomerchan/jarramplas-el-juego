@@ -129,6 +129,8 @@ const state = {
   hudLastScore: null,
   hudLastCombo: null,
   hudLastTimeValue: "",
+  menuDemoReady: false,
+  menuDemoNextThrowAt: 0,
   hasPressedGameWindow: false,
   nextPersonId: 0,
   nextPersonAt: 0,
@@ -170,6 +172,14 @@ function lerp(a, b, t) {
 
 function easeOutQuad(t) {
   return 1 - (1 - t) * (1 - t);
+}
+
+function vibrateImpact(duration = 20) {
+  try {
+    if (navigator.vibrate) navigator.vibrate(duration);
+  } catch {
+    // Some browsers expose vibrate but reject it outside allowed gestures.
+  }
 }
 
 function maxPeopleHits() {
@@ -400,9 +410,16 @@ function updateJarramplasCountdown() {
   if (now >= nextJarramplas) {
     nextJarramplas = new Date(now.getFullYear() + 1, 0, 19);
   }
-  const oneDay = 24 * 60 * 60 * 1000;
-  const daysLeft = Math.ceil((nextJarramplas - now) / oneDay);
-  jarramplasCountdownEl.textContent = `Quedan ${daysLeft} días para Jarramplas`;
+  const remaining = Math.max(0, nextJarramplas - now);
+  const totalSeconds = Math.floor(remaining / 1000);
+  const daysLeft = Math.floor(totalSeconds / 86400);
+  const hoursLeft = Math.floor((totalSeconds % 86400) / 3600);
+  const minutesLeft = Math.floor((totalSeconds % 3600) / 60);
+  const secondsLeft = totalSeconds % 60;
+  const clock = [hoursLeft, minutesLeft, secondsLeft]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+  jarramplasCountdownEl.textContent = `${daysLeft} días · ${clock}`;
 }
 
 function resize() {
@@ -689,6 +706,7 @@ function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   state.floaters = [];
   state.particles = [];
   state.drag = null;
+  state.menuDemoReady = false;
   state.hudScore = 0;
   state.hudLastScore = null;
   state.hudLastCombo = null;
@@ -696,6 +714,7 @@ function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   state.hasPressedGameWindow = false;
   state.nextPersonId = 0;
   state.nextPersonAt = performance.now() + 700;
+  layoutJarramplas();
   state.jarramplas.x = state.w / 2;
   state.jarramplas.y = state.h * jarramplasMovementConfig.minYRatio;
   state.jarramplas.targetX = state.w / 2;
@@ -842,10 +861,7 @@ function restartGame() {
 function goHome() {
   trackEvent("home_opened", { from_mode: state.mode });
   state.mode = "menu";
-  state.drag = null;
-  state.turnips = [];
-  state.floaters = [];
-  state.particles = [];
+  resetMenuDemo();
   hud.classList.remove("is-visible");
   showScreen("start");
 }
@@ -1202,6 +1218,96 @@ function updateTurnipMotion(turnip, dt) {
   }
 }
 
+function resetMenuDemo(now = performance.now()) {
+  state.people = [];
+  state.turnips = [];
+  state.floaters = [];
+  state.particles = [];
+  state.drag = null;
+  assets.jarramplas = assets.jarramplasVariants.length
+    ? assets.jarramplasVariants[Math.floor(Math.random() * assets.jarramplasVariants.length)].frames
+    : emptyJarramplasFrames();
+  state.jarramplas.x = state.w * 0.5;
+  state.jarramplas.y = state.h * (state.h < 700 ? 0.2 : 0.34);
+  state.jarramplas.vx = 0;
+  state.jarramplas.vy = 0;
+  state.jarramplas.direction = "down";
+  state.jarramplas.walkFrame = 0;
+  state.jarramplas.flash = 0;
+  state.menuDemoNextThrowAt = now + 450;
+  state.menuDemoReady = true;
+}
+
+function addMenuDemoTurnip(now) {
+  const fromLeft = Math.random() < 0.5;
+  const from = {
+    x: fromLeft ? -28 : state.w + 28,
+    y: state.h * (0.58 + Math.random() * 0.14),
+  };
+  const target = {
+    x: state.jarramplas.x + (Math.random() - 0.5) * state.jarramplas.w * 0.5,
+    y: state.jarramplas.y + state.jarramplas.h * 0.28,
+  };
+  const dx = target.x - from.x;
+  const dy = target.y - from.y;
+  const angle = Math.atan2(dy, dx);
+  const speed = 430 + Math.random() * 90;
+  state.turnips.push({
+    x: from.x,
+    y: from.y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed - 25,
+    gravity: 145,
+    r: Math.max(12, Math.min(state.w, state.h) * 0.028),
+    spin: Math.random() * 6.28,
+    owner: "crowd",
+    hit: false,
+    menuDemo: true,
+  });
+  state.menuDemoNextThrowAt = now + 620 + Math.random() * 520;
+  trimRuntimeArray(state.turnips, MAX_ACTIVE_TURNIPS);
+}
+
+function updateMenuDemo(now, dt) {
+  if (!assets.ready) return;
+  if (!state.menuDemoReady) resetMenuDemo(now);
+
+  const j = state.jarramplas;
+  const menuSize = Math.min(state.w * 0.2, state.h * 0.12, 88);
+  j.w = menuSize;
+  j.h = menuSize * 1.72;
+  const t = now / 1000;
+  const targetX = state.w * 0.5 + Math.sin(t * 0.72) * state.w * 0.18;
+  const targetYRatio = state.h < 700 ? 0.19 : 0.34;
+  const targetY = state.h * targetYRatio + Math.sin(t * 1.1) * state.h * 0.018;
+  j.vx += (targetX - j.x) * 10 * dt;
+  j.vy += (targetY - j.y) * 10 * dt;
+  j.vx *= Math.pow(0.05, dt);
+  j.vy *= Math.pow(0.05, dt);
+  j.x += j.vx * dt;
+  j.y += j.vy * dt;
+  j.direction = j.vx < -6 ? "left" : j.vx > 6 ? "right" : "down";
+  j.walkFrame = Math.floor(now / 130) % 16;
+  j.flash = Math.max(0, (j.flash || 0) - dt);
+
+  if (now >= state.menuDemoNextThrowAt) addMenuDemoTurnip(now);
+
+  const jBox = { x: j.x, y: j.y + j.h * 0.72, w: j.w * 0.75, h: j.h * 0.72 };
+  for (const turnip of state.turnips) {
+    updateTurnipMotion(turnip, dt);
+    turnip.spin += dt * 10;
+    if (!turnip.hit && rectCircleHit(jBox, turnip)) {
+      turnip.hit = true;
+      j.flash = 0.16;
+      addJarramplasImpact(turnip.x, turnip.y, "crowd");
+    }
+  }
+  state.turnips = state.turnips.filter((t) => {
+    const inBounds = t.x > -90 && t.x < state.w + 90 && t.y > -120 && t.y < state.h + 120;
+    return !t.hit && inBounds;
+  });
+}
+
 function rectCircleHit(rect, circle) {
   const rx = rect.x - rect.w / 2;
   const ry = rect.y - rect.h;
@@ -1213,6 +1319,10 @@ function rectCircleHit(rect, circle) {
 function update(now) {
   const dt = Math.min((now - state.last) / 1000, 0.033);
   state.last = now;
+
+  if (state.mode === "menu") {
+    updateMenuDemo(now, dt);
+  }
 
   if (state.mode === "playing") {
     const type = gameTypeConfig[state.gameType];
@@ -1269,6 +1379,7 @@ function update(now) {
           const hitBox = { x: person.x, y: person.y, w: person.w * 0.92, h: person.h * 0.86 };
           if (rectCircleHit(hitBox, turnip)) {
             turnip.hit = true;
+            vibrateImpact();
             resetCombo();
             state.peopleHits += 1;
             state.peoplePenalty += 5;
@@ -1292,6 +1403,7 @@ function update(now) {
         turnip.hit = true;
         addJarramplasImpact(turnip.x, turnip.y, turnip.owner);
         if (turnip.owner === "player") {
+          vibrateImpact();
           state.jarramplasHits += 1;
           j.flash = 0.22;
           const multiplier = advanceCombo();
@@ -1825,6 +1937,7 @@ window.addEventListener("mouseup", onPointerEnd);
 window.addEventListener("resize", resize);
 
 updateJarramplasCountdown();
+setInterval(updateJarramplasCountdown, 1000);
 syncPlayerNameInput();
 if (gameVersionEl) gameVersionEl.textContent = `v${APP_VERSION}`;
 resize();
