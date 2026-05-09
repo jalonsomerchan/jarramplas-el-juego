@@ -71,6 +71,11 @@ const MAX_ACTIVE_PEOPLE = 16;
 const MAX_ACTIVE_TURNIPS = 42;
 const MAX_ACTIVE_FLOATERS = 24;
 const MAX_ACTIVE_PARTICLES = 180;
+const PLAYER_MIN_LAUNCH_SPEED = 500;
+const PLAYER_MAX_LAUNCH_SPEED = 920;
+const PLAYER_MIN_GRAVITY = 330;
+const PLAYER_MAX_GRAVITY = 560;
+const CROWD_TURNIP_GRAVITY = 120;
 const assets = {
   ready: false,
   jarramplas: { down: [], left: [], right: [], up: [] },
@@ -120,6 +125,10 @@ const state = {
   floaters: [],
   particles: [],
   drag: null,
+  hudScore: 0,
+  hudLastScore: null,
+  hudLastCombo: null,
+  hudLastTimeValue: "",
   hasPressedGameWindow: false,
   nextPersonId: 0,
   nextPersonAt: 0,
@@ -149,6 +158,18 @@ const trackEvent = createEventTracker({
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function easeOutQuad(t) {
+  return 1 - (1 - t) * (1 - t);
 }
 
 function maxPeopleHits() {
@@ -668,6 +689,10 @@ function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   state.floaters = [];
   state.particles = [];
   state.drag = null;
+  state.hudScore = 0;
+  state.hudLastScore = null;
+  state.hudLastCombo = null;
+  state.hudLastTimeValue = "";
   state.hasPressedGameWindow = false;
   state.nextPersonId = 0;
   state.nextPersonAt = performance.now() + 700;
@@ -909,17 +934,52 @@ function launchOrigin() {
 function formatHudValue() {
   if (state.gameType === "timed") return formatTime(finiteNumber(state.timeLeft));
   if (state.gameType === "survival") return `${Math.max(0, Math.ceil(finiteNumber(state.jarramplasHealth)))}%`;
-  if (state.gameType === "limitedTurnips") return `${Math.max(0, finiteNumber(state.turnipsLeft))} nabos`;
-  return `${Math.max(0, maxPeopleHits() - finiteNumber(state.peopleHits))} avisos`;
+  if (state.gameType === "limitedTurnips") return `${Math.max(0, finiteNumber(state.turnipsLeft))}`;
+  return `${Math.max(0, maxPeopleHits() - finiteNumber(state.peopleHits))}`;
+}
+
+function hudModeLabel() {
+  if (state.gameType === "timed") return "Tiempo";
+  if (state.gameType === "survival") return "Vida";
+  if (state.gameType === "limitedTurnips") return "Nabos";
+  return "Avisos";
 }
 
 function updateHud() {
-  const type = gameTypeConfig[state.gameType] || {};
-  scoreEl.textContent = `${formatNumber(state.score)} pts`;
-  timeEl.innerHTML = `${formatHudValue()}<small>${type.shortLabel || ""}</small>`;
-  comboEl.innerHTML = `x${formatNumber(state.comboMultiplier)}<small>${formatNumber(state.comboCount)} combo</small>`;
+  const previousScore = state.hudLastScore;
+  const scoreDelta = previousScore === null ? 0 : state.score - previousScore;
+  state.hudLastScore = state.score;
+  state.hudScore += (state.score - state.hudScore) * 0.32;
+  if (Math.abs(state.score - state.hudScore) < 0.5) state.hudScore = state.score;
+
+  scoreEl.innerHTML = `<span class="hud-label">Puntos</span><strong>${formatNumber(Math.round(state.hudScore))}</strong><small>pts</small>`;
+  if (scoreDelta !== 0) {
+    scoreEl.dataset.delta = `${scoreDelta > 0 ? "+" : ""}${formatNumber(scoreDelta)}`;
+    scoreEl.classList.remove("is-gain", "is-penalty");
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add(scoreDelta > 0 ? "is-gain" : "is-penalty");
+  }
+
+  const hudValue = formatHudValue();
+  timeEl.innerHTML = `<span class="hud-label">${hudModeLabel()}</span><strong>${hudValue}</strong>`;
+  timeEl.classList.toggle("is-urgent", state.gameType === "timed" && state.timeLeft <= 10);
+  if (state.hudLastTimeValue && state.hudLastTimeValue !== hudValue) {
+    timeEl.classList.remove("is-tick");
+    void timeEl.offsetWidth;
+    timeEl.classList.add("is-tick");
+  }
+  state.hudLastTimeValue = hudValue;
+
+  comboEl.innerHTML = `<span class="hud-label">Combo</span><strong>x${formatNumber(state.comboMultiplier)}</strong><small>${formatNumber(state.comboCount)}</small>`;
   comboEl.classList.toggle("is-hot", state.comboMultiplier > 1);
-  recordEl.innerHTML = `${formatNumber(getRecord(state.gameType, state.difficulty))} pts<small>Récord</small>`;
+  if (state.hudLastCombo !== null && state.hudLastCombo !== state.comboMultiplier) {
+    comboEl.classList.remove("is-pop");
+    void comboEl.offsetWidth;
+    comboEl.classList.add("is-pop");
+  }
+  state.hudLastCombo = state.comboMultiplier;
+
+  recordEl.innerHTML = `<span class="hud-label">Récord</span><strong>${formatNumber(getRecord(state.gameType, state.difficulty))}</strong><small>pts</small>`;
 }
 
 function advanceCombo() {
@@ -1060,11 +1120,46 @@ function updateJarramplasMotion(now, dt) {
   j.flash = Math.max(0, (j.flash || 0) - dt);
 }
 
-function launchTurnip(from, to, owner) {
+function maxLaunchDrag() {
+  return Math.min(state.w, state.h) * 0.62;
+}
+
+function launchMotion(from, to, owner) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const power = Math.min(Math.hypot(dx, dy), Math.min(state.w, state.h) * 0.62);
-  if (power < 20) return;
+  const distance = Math.hypot(dx, dy);
+  const power = Math.min(distance, maxLaunchDrag());
+  const angle = Math.atan2(dy, dx);
+
+  if (owner !== "player") {
+    const speed = 365 + Math.random() * 70;
+    return {
+      power,
+      pull: 1,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: CROWD_TURNIP_GRAVITY,
+    };
+  }
+
+  const pull = clamp(power / maxLaunchDrag(), 0, 1);
+  const easedPull = easeOutQuad(pull);
+  const speed = lerp(PLAYER_MIN_LAUNCH_SPEED, PLAYER_MAX_LAUNCH_SPEED, easedPull);
+  const gravity = lerp(PLAYER_MIN_GRAVITY, PLAYER_MAX_GRAVITY, easedPull);
+  const arcAngle = angle - lerp(0.02, 0.1, easedPull);
+
+  return {
+    power,
+    pull,
+    vx: Math.cos(arcAngle) * speed,
+    vy: Math.sin(arcAngle) * speed,
+    gravity,
+  };
+}
+
+function launchTurnip(from, to, owner) {
+  const motion = launchMotion(from, to, owner);
+  if (motion.power < 20) return;
   if (owner === "player" && state.gameType === "limitedTurnips") {
     if (state.turnipsLeft <= 0) return;
     state.turnipsLeft -= 1;
@@ -1074,18 +1169,18 @@ function launchTurnip(from, to, owner) {
     trackEvent("turnip_thrown", {
       turnip_owner: owner,
       turnips_thrown: state.playerTurnipsThrown,
-      launch_power: Math.round(power),
+      launch_power: Math.round(motion.power),
+      launch_pull: Math.round(motion.pull * 100),
     });
   } else {
     state.crowdTurnipsThrown += 1;
   }
-  const speed = owner === "player" ? 760 : 365 + Math.random() * 70;
-  const angle = Math.atan2(dy, dx);
   state.turnips.push({
     x: from.x,
     y: from.y,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
+    vx: motion.vx,
+    vy: motion.vy,
+    gravity: motion.gravity,
     r: Math.max(13, Math.min(state.w, state.h) * 0.03),
     spin: Math.random() * 6.28,
     owner,
@@ -1093,6 +1188,18 @@ function launchTurnip(from, to, owner) {
   });
   trimRuntimeArray(state.turnips, MAX_ACTIVE_TURNIPS);
   updateHud();
+}
+
+function updateTurnipMotion(turnip, dt) {
+  const stepCount = Math.max(1, Math.ceil(dt / (1 / 120)));
+  const stepDt = dt / stepCount;
+  const gravity = turnip.gravity || CROWD_TURNIP_GRAVITY;
+
+  for (let i = 0; i < stepCount; i += 1) {
+    turnip.x += turnip.vx * stepDt;
+    turnip.y += turnip.vy * stepDt;
+    turnip.vy += gravity * stepDt;
+  }
 }
 
 function rectCircleHit(rect, circle) {
@@ -1116,6 +1223,12 @@ function update(now) {
     }
     if (state.mode !== "playing") return;
     updateHud();
+
+    if (state.drag) {
+      const follow = 1 - Math.pow(0.0001, dt);
+      state.drag.current.x += (state.drag.target.x - state.drag.current.x) * follow;
+      state.drag.current.y += (state.drag.target.y - state.drag.current.y) * follow;
+    }
 
     const j = state.jarramplas;
     updateJarramplasMotion(now, dt);
@@ -1147,9 +1260,7 @@ function update(now) {
     state.people = state.people.filter((person) => person.x > -person.w * 2.6 && person.x < state.w + person.w * 2.6);
 
     for (const turnip of state.turnips) {
-      turnip.x += turnip.vx * dt;
-      turnip.y += turnip.vy * dt;
-      turnip.vy += turnip.owner === "player" ? 290 * dt : 120 * dt;
+      updateTurnipMotion(turnip, dt);
       turnip.spin += dt * 10;
       if (turnip.hit) continue;
 
@@ -1453,6 +1564,62 @@ function drawTimedCountdown() {
   ctx.restore();
 }
 
+function drawLaunchTrajectory(drag) {
+  const motion = launchMotion(drag.start, drag.current, "player");
+  if (motion.power < 20) return;
+
+  const points = [];
+  const steps = 19;
+  const stepTime = 0.04;
+  let x = drag.start.x;
+  let y = drag.start.y;
+  let vx = motion.vx;
+  let vy = motion.vy;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(255, 246, 223, 0.34)";
+  ctx.lineWidth = Math.max(2, Math.min(state.w, state.h) * 0.006);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+
+  for (let i = 0; i < steps; i += 1) {
+    x += vx * stepTime;
+    y += vy * stepTime;
+    vy += motion.gravity * stepTime;
+    points.push({ x, y });
+    ctx.lineTo(x, y);
+    if (x < -40 || x > state.w + 40 || y < -80 || y > state.h + 80) break;
+  }
+  ctx.stroke();
+
+  for (let i = 1; i < points.length; i += 3) {
+    const point = points[i];
+    const fade = 1 - i / points.length;
+    ctx.globalAlpha = 0.28 + fade * 0.55;
+    ctx.fillStyle = "#fff0bd";
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, lerp(2.2, 4.8, motion.pull) * fade + 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = "rgba(55, 33, 12, 0.42)";
+  ctx.lineWidth = Math.max(5, Math.min(state.w, state.h) * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(drag.start.x, drag.start.y);
+  ctx.lineTo(drag.current.x, drag.current.y);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 246, 223, 0.9)";
+  ctx.lineWidth = Math.max(2, Math.min(state.w, state.h) * 0.006);
+  ctx.beginPath();
+  ctx.moveTo(drag.start.x, drag.start.y);
+  ctx.lineTo(drag.current.x, drag.current.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function render() {
   drawBackground();
   const drawables = [
@@ -1479,13 +1646,7 @@ function render() {
   }
 
   if (state.drag) {
-    ctx.strokeStyle = "rgba(255, 246, 223, 0.74)";
-    ctx.lineWidth = 4;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(state.drag.start.x, state.drag.start.y);
-    ctx.lineTo(state.drag.current.x, state.drag.current.y);
-    ctx.stroke();
+    drawLaunchTrajectory(state.drag);
     drawTurnip(state.drag.start.x, state.drag.start.y, Math.max(30, state.w * 0.075), 0);
   }
 
@@ -1536,13 +1697,13 @@ function onPointerStart(event) {
   if (Math.hypot(p.x - origin.x, p.y - origin.y) > grabRadius) return;
   if (state.gameType === "limitedTurnips" && state.turnipsLeft <= 0) return;
   event.preventDefault();
-  state.drag = { start: launchStartFor(p), current: p };
+  state.drag = { start: launchStartFor(p), current: { ...p }, target: { ...p } };
 }
 
 function onPointerMove(event) {
   if (!state.drag || state.mode !== "playing") return;
   event.preventDefault();
-  state.drag.current = pointerPos(event);
+  state.drag.target = pointerPos(event);
 }
 
 function onPointerEnd(event) {
@@ -1550,7 +1711,7 @@ function onPointerEnd(event) {
   event.preventDefault();
   const drag = state.drag;
   state.drag = null;
-  launchTurnip(drag.start, drag.current, "player");
+  launchTurnip(drag.start, drag.target || drag.current, "player");
 }
 
 applyLevelLabels();
