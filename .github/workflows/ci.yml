@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  smoke-tests:
+    name: Smoke tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Check required static files
+        run: |
+          test -f index.html
+          test -f styles.css
+          test -f game.js
+          test -f config.js
+          test -f storage.js
+          test -f leaderboard.js
+          test -f manifest.webmanifest
+          test -f service-worker.js
+
+      - name: Run smoke tests
+        run: npm run test:smoke
