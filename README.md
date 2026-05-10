@@ -48,6 +48,7 @@
 - JavaScript Vanilla
 - LocalStorage
 - Firebase (opcional leaderboard)
+- Playwright (smoke tests)
 
 ---
 
@@ -60,15 +61,35 @@ game.js
 config.js
 storage.js
 assets/
+tests/
+.github/workflows/
 ```
 
 ---
 
 ## 🚀 Desarrollo
 
+Para levantar el juego como web estática:
+
 ```bash
 python3 -m http.server
 ```
+
+Para instalar dependencias de desarrollo y ejecutar los smoke tests:
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:smoke
+```
+
+También puedes ejecutar toda la suite con:
+
+```bash
+npm test
+```
+
+Los tests levantan automáticamente un servidor estático en `http://127.0.0.1:4173` y validan que la pantalla inicial, la navegación básica y las estadísticas funcionan sin depender de Firebase real.
 
 ## 🌍 Ranking global con Firebase
 
