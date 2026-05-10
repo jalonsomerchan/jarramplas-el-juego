@@ -13,6 +13,27 @@ import {
   shareTextConfig,
 } from "./config.js";
 import {
+  createImageFrameLoader,
+  emptyJarramplasFrames,
+  loadJarramplasFrameSet as loadJarramplasFrameSetWith,
+  loadOptionalImage as loadOptionalImageWith,
+} from "./src/core/assets.js";
+import { vibrateImpact } from "./src/core/haptics.js";
+import { clamp, easeOutQuad, finiteNumber, lerp } from "./src/core/math.js";
+import { createScreenManager } from "./src/core/screens.js";
+import { rectCircleHit } from "./src/game/collision.js";
+import { createEffects } from "./src/game/effects.js";
+import { createJarramplasMotion } from "./src/game/jarramplas-motion.js";
+import { createMenuDemo } from "./src/game/menu-demo.js";
+import { createPeopleController } from "./src/game/people.js";
+import { createRenderer } from "./src/game/rendering.js";
+import { createRuntimeLimiter, trimRuntimeArray } from "./src/game/runtime.js";
+import { createTurnipMotion } from "./src/game/turnip-motion.js";
+import { createPointerHandlers } from "./src/input/pointer.js";
+import { createHud } from "./src/ui/hud.js";
+import { createLeaderboardUi } from "./src/ui/leaderboard-ui.js";
+import { createStatsScreen, detailRow } from "./src/ui/stats-ui.js";
+import {
   formatNumber,
   formatPercent,
   getLocalLeaderboard,
@@ -76,6 +97,12 @@ const PLAYER_MAX_LAUNCH_SPEED = 920;
 const PLAYER_MIN_GRAVITY = 330;
 const PLAYER_MAX_GRAVITY = 560;
 const CROWD_TURNIP_GRAVITY = 120;
+const runtimeLimits = {
+  people: MAX_ACTIVE_PEOPLE,
+  turnips: MAX_ACTIVE_TURNIPS,
+  floaters: MAX_ACTIVE_FLOATERS,
+  particles: MAX_ACTIVE_PARTICLES,
+};
 const assets = {
   ready: false,
   jarramplas: { down: [], left: [], right: [], up: [] },
@@ -139,16 +166,7 @@ const state = {
   tutorialNextScreen: "type",
 };
 
-function trimRuntimeArray(items, maxItems) {
-  if (items.length > maxItems) items.splice(0, items.length - maxItems);
-}
-
-function enforceRuntimeLimits() {
-  trimRuntimeArray(state.people, MAX_ACTIVE_PEOPLE);
-  trimRuntimeArray(state.turnips, MAX_ACTIVE_TURNIPS);
-  trimRuntimeArray(state.floaters, MAX_ACTIVE_FLOATERS);
-  trimRuntimeArray(state.particles, MAX_ACTIVE_PARTICLES);
-}
+const enforceRuntimeLimits = createRuntimeLimiter({ state, limits: runtimeLimits });
 
 const trackEvent = createEventTracker({
   getState: () => state,
@@ -156,31 +174,6 @@ const trackEvent = createEventTracker({
   gameTypeConfig,
   difficultyConfig,
 });
-
-function finiteNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function easeOutQuad(t) {
-  return 1 - (1 - t) * (1 - t);
-}
-
-function vibrateImpact(duration = 20) {
-  try {
-    if (navigator.vibrate) navigator.vibrate(duration);
-  } catch {
-    // Some browsers expose vibrate but reject it outside allowed gestures.
-  }
-}
 
 function maxPeopleHits() {
   return finiteNumber(gameTypeConfig.eviction?.maxPeopleHits);
@@ -197,65 +190,15 @@ function markAssetLoaded() {
   updateLoadingBar();
 }
 
-function loadImageFrame(path, label = null) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      markAssetLoaded();
-      resolve({
-        img,
-        w: img.naturalWidth,
-        h: img.naturalHeight,
-        path,
-        name: label || fileLabel(path),
-      });
-    };
-    img.onerror = () => {
-      markAssetLoaded();
-      reject(new Error(`No se pudo cargar ${path}`));
-    };
-    img.src = path;
-  });
-}
-
-function fileLabel(path) {
-  const fileName = decodeURIComponent(path.split("/").pop() || path);
-  return fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ");
-}
-
-function loadImageFrames(paths) {
-  return Promise.all(paths.map(loadImageFrame));
-}
-
-function emptyJarramplasFrames() {
-  return { down: [], left: [], right: [], up: [] };
-}
-
-async function loadJarramplasFrameSet(framePaths) {
-  if (Array.isArray(framePaths)) {
-    const frames = await loadImageFrames(framePaths);
-    return { down: frames, left: frames, right: frames, up: frames };
-  }
-  const loaded = await Promise.all(Object.entries(framePaths).map(async ([direction, paths]) => [
-    direction,
-    await loadImageFrames(paths),
-  ]));
-  return { ...emptyJarramplasFrames(), ...Object.fromEntries(loaded) };
-}
+const loadImageFrame = createImageFrameLoader({ onProgress: markAssetLoaded });
+const loadOptionalImage = (path, label = null) => loadOptionalImageWith(path, loadImageFrame, label);
+const loadJarramplasFrameSet = (framePaths) => loadJarramplasFrameSetWith(framePaths, loadImageFrame);
 
 async function loadJarramplasVariants() {
   return Promise.all(jarramplasVariants.map(async (variant) => ({
     ...variant,
     frames: await loadJarramplasFrameSet(variant.frames),
   })));
-}
-
-async function loadOptionalImage(path, label = null) {
-  try {
-    return await loadImageFrame(path, label);
-  } catch {
-    return null;
-  }
 }
 
 async function loadBackgrounds() {
@@ -444,196 +387,49 @@ function layoutJarramplas() {
   state.jarramplas.targetY = state.jarramplas.y;
 }
 
-function layoutCrowd() {
-  for (const person of state.people) updatePersonFacing(person);
-}
+const { layoutCrowd, spawnPerson, updatePersonFacing } = createPeopleController({
+  state,
+  difficultyConfig,
+  limits: runtimeLimits,
+});
 
-function showScreen(name) {
-  Object.values(screens).forEach((screen) => screen.classList.remove("is-visible"));
-  if (name) screens[name].classList.add("is-visible");
-  hud.classList.toggle("is-visible", state.mode === "playing" || state.mode === "paused");
-}
+const { showScreen } = createScreenManager({ screens, hud, getMode: () => state.mode });
 
-function statBox(value, label) {
-  const box = document.createElement("div");
-  const strong = document.createElement("strong");
-  const span = document.createElement("span");
-  box.className = "stat-box";
-  strong.textContent = value;
-  span.textContent = label;
-  box.append(strong, span);
-  return box;
-}
+const {
+  populateLeaderboardFilters,
+  refreshStatsLeaderboard,
+  syncPlayerNameInput,
+  updatePlayerName,
+  submitResultToLeaderboard,
+} = createLeaderboardUi({
+  state,
+  playerNameInput,
+  statsLeaderboardTypeEl,
+  statsLeaderboardDifficultyEl,
+  gameTypeConfig,
+  difficultyConfig,
+  formatNumber,
+  getLocalLeaderboard,
+  getPlayerName,
+  saveLocalLeaderboardScore,
+  savePlayerName,
+  fetchGlobalLeaderboard,
+  firebaseErrorMessage,
+  isGlobalLeaderboardConfigured,
+  submitGlobalScore,
+});
 
-function detailRow(label, value) {
-  const row = document.createElement("div");
-  const labelEl = document.createElement("span");
-  const valueEl = document.createElement("strong");
-  row.className = "detail-row";
-  labelEl.textContent = label;
-  valueEl.textContent = value;
-  row.append(labelEl, valueEl);
-  return row;
-}
-
-function leaderboardEntry(scoreEntry, index) {
-  const item = document.createElement("li");
-  const rank = document.createElement("span");
-  const name = document.createElement("span");
-  const score = document.createElement("strong");
-  rank.className = "leaderboard-rank";
-  name.className = "leaderboard-name";
-  score.className = "leaderboard-score";
-  rank.textContent = `#${index + 1}`;
-  name.textContent = scoreEntry.playerName || "Jugador";
-  score.textContent = `${formatNumber(scoreEntry.score)} pts`;
-  item.append(rank, name, score);
-  return item;
-}
-
-function renderLeaderboardList(listEl, entries) {
-  listEl.innerHTML = "";
-  entries.slice(0, 10).forEach((entry, index) => {
-    listEl.append(leaderboardEntry(entry, index));
-  });
-}
-
-function leaderboardFallbackMessage() {
-  return isGlobalLeaderboardConfigured()
-    ? "No se pudo cargar Firebase. Mostrando ranking local."
-    : "Ranking local hasta configurar Firebase.";
-}
-
-function leaderboardUnavailableMessage(localEntries) {
-  if (isGlobalLeaderboardConfigured()) return leaderboardFallbackMessage();
-  return localEntries.length ? leaderboardFallbackMessage() : "Sin puntuaciones todavía.";
-}
-
-async function refreshLeaderboard({ gameType, difficulty, listId, statusId }) {
-  const listEl = document.getElementById(listId);
-  const statusEl = document.getElementById(statusId);
-  if (!listEl || !statusEl) return;
-  const localEntries = getLocalLeaderboard(gameType, difficulty);
-  renderLeaderboardList(listEl, localEntries);
-  statusEl.textContent = "Cargando ranking...";
-  try {
-    const result = await fetchGlobalLeaderboard(gameType, difficulty, gameTypeConfig, difficultyConfig);
-    if (result.ok) {
-      renderLeaderboardList(listEl, result.entries);
-      statusEl.textContent = result.entries.length ? "Ranking global actualizado." : "Sin puntuaciones globales todavía.";
-      return;
-    }
-    statusEl.textContent = leaderboardUnavailableMessage(localEntries);
-  } catch (error) {
-    console.warn("No se pudo cargar el ranking global de Firebase.", error);
-    statusEl.textContent = isGlobalLeaderboardConfigured()
-      ? firebaseErrorMessage(error)
-      : leaderboardUnavailableMessage(localEntries);
-  }
-}
-
-function populateLeaderboardFilters() {
-  if (!statsLeaderboardTypeEl || !statsLeaderboardDifficultyEl) return;
-  statsLeaderboardTypeEl.innerHTML = "";
-  statsLeaderboardDifficultyEl.innerHTML = "";
-  Object.entries(gameTypeConfig).forEach(([key, config]) => {
-    const option = document.createElement("option");
-    option.value = key;
-    option.textContent = config.shortLabel || config.label;
-    statsLeaderboardTypeEl.append(option);
-  });
-  Object.entries(difficultyConfig).forEach(([key, config]) => {
-    const option = document.createElement("option");
-    option.value = key;
-    option.textContent = config.label;
-    statsLeaderboardDifficultyEl.append(option);
-  });
-}
-
-function refreshStatsLeaderboard() {
-  refreshLeaderboard({
-    gameType: statsLeaderboardTypeEl?.value || state.pendingGameType,
-    difficulty: statsLeaderboardDifficultyEl?.value || state.pendingDifficulty,
-    listId: "statsLeaderboard",
-    statusId: "statsLeaderboardStatus",
-  });
-}
-
-function syncPlayerNameInput() {
-  if (!playerNameInput) return;
-  playerNameInput.value = getPlayerName();
-}
-
-function updatePlayerName(value) {
-  const safeName = savePlayerName(value);
-  if (playerNameInput) playerNameInput.value = safeName;
-  return safeName;
-}
-
-async function submitResultToLeaderboard(match) {
-  const playerName = getPlayerName();
-  const accuracy = state.playerTurnipsThrown ? (state.jarramplasHits / state.playerTurnipsThrown) * 100 : 0;
-  const scoreEntry = saveLocalLeaderboardScore({
-    playerName,
-    score: match.score,
-    gameType: match.gameType,
-    difficulty: match.difficulty,
-    accuracy,
-    jarramplasHits: match.turnipsHit,
-    peopleHits: match.peopleHits,
-    createdAt: Date.now(),
-  });
-  const statusEl = document.getElementById("resultLeaderboardStatus");
-  if (statusEl) statusEl.textContent = "Guardando puntuación...";
-  try {
-    const result = await submitGlobalScore(scoreEntry, gameTypeConfig, difficultyConfig);
-    if (statusEl) {
-      statusEl.textContent = result.ok ? "Puntuación subida al ranking global." : leaderboardFallbackMessage();
-    }
-  } catch (error) {
-    console.warn("No se pudo subir la puntuación a Firebase.", error);
-    if (statusEl) statusEl.textContent = firebaseErrorMessage(error);
-  }
-  refreshLeaderboard({
-    gameType: match.gameType,
-    difficulty: match.difficulty,
-    listId: "resultLeaderboard",
-    statusId: "resultLeaderboardStatus",
-  });
-}
-
-function renderStatsScreen() {
-  const stats = getStats();
-  const grid = document.getElementById("statsGrid");
-  const details = document.getElementById("statsDetails");
-  const favoriteType = Object.entries(stats.byType || {}).sort((a, b) => (b[1].gamesFinished || 0) - (a[1].gamesFinished || 0))[0];
-  const favoriteDifficulty = Object.entries(stats.byDifficulty || {}).sort((a, b) => (b[1].gamesFinished || 0) - (a[1].gamesFinished || 0))[0];
-  const avgScore = stats.gamesFinished ? stats.totalScore / stats.gamesFinished : 0;
-  grid.innerHTML = "";
-  details.innerHTML = "";
-  grid.append(
-    statBox(formatNumber(stats.gamesStarted), "Partidas jugadas"),
-    statBox(formatNumber(stats.gamesFinished), "Partidas acabadas"),
-    statBox(formatNumber(stats.turnipsThrown), "Nabos tirados"),
-    statBox(formatNumber(stats.turnipsHit), "Nabos acertados"),
-    statBox(formatNumber(stats.peopleHits), "Personas dadas"),
-    statBox(formatNumber(stats.bestScore), "Mejor puntuación")
-  );
-  details.append(
-    detailRow("Acierto total", formatPercent(stats.turnipsHit, stats.turnipsThrown)),
-    detailRow("Puntuación media", `${formatNumber(avgScore)} pts`),
-    detailRow("Tipo más jugado", favoriteType ? (gameTypeConfig[favoriteType[0]]?.label || favoriteType[0]) : "Sin partidas"),
-    detailRow("Nivel más jugado", favoriteDifficulty ? (difficultyConfig[favoriteDifficulty[0]]?.label || favoriteDifficulty[0]) : "Sin partidas")
-  );
-  (stats.scores || []).slice(0, 5).forEach((entry, index) => {
-    const type = gameTypeConfig[entry.gameType]?.shortLabel || entry.gameType;
-    const difficulty = difficultyConfig[entry.difficulty]?.shareLabel || entry.difficulty;
-    details.append(detailRow(`Puntuación ${index + 1}: ${type} · ${difficulty}`, `${formatNumber(entry.score)} pts`));
-  });
-  if (statsLeaderboardTypeEl) statsLeaderboardTypeEl.value = state.gameType || state.pendingGameType;
-  if (statsLeaderboardDifficultyEl) statsLeaderboardDifficultyEl.value = state.difficulty || state.pendingDifficulty;
-  refreshStatsLeaderboard();
-}
+const renderStatsScreen = createStatsScreen({
+  state,
+  statsLeaderboardTypeEl,
+  statsLeaderboardDifficultyEl,
+  getStats,
+  gameTypeConfig,
+  difficultyConfig,
+  formatNumber,
+  formatPercent,
+  refreshStatsLeaderboard,
+});
 
 function chooseGameType(gameType) {
   if (!assets.ready) return;
@@ -866,79 +662,11 @@ function goHome() {
   showScreen("start");
 }
 
-function spawnPerson(initial = false) {
-  const config = difficultyConfig[state.difficulty];
-  const id = state.nextPersonId;
-  state.nextPersonId += 1;
-  const fromLeft = Math.random() < 0.5;
-  const lane = state.h * (0.53 + Math.random() * 0.13);
-  const speed = (36 + Math.random() * 34) * config.speed;
-  const size = Math.min(state.w * 0.18, state.h * 0.105, 80) * (0.9 + (id % 3) * 0.05);
-  const person = {
-    index: id,
-    groupId: id,
-    x: initial ? Math.random() * state.w : (fromLeft ? -size : state.w + size),
-    y: lane,
-    vx: fromLeft ? speed : -speed,
-    targetY: lane + (Math.random() - 0.5) * state.h * 0.08,
-    w: size * 0.62,
-    h: size,
-    facing: "side",
-    flip: false,
-    animT: Math.random() * 4,
-    throwTimer: 0.5 + Math.random() * 1.2,
-    throwAnim: 0,
-    throwT: 0,
-  };
-  updatePersonFacing(person);
-  state.people.push(person);
-  trimRuntimeArray(state.people, MAX_ACTIVE_PEOPLE);
-}
-
-function updatePersonFacing(person) {
-  const j = state.jarramplas;
-  const dx = j.x - person.x;
-  const dy = j.y + j.h * 0.42 - person.y;
-  if (Math.abs(dx) > Math.abs(dy) * 1.25) {
-    person.facing = "side";
-    person.flip = dx < 0;
-  } else {
-    person.facing = dy < 0 ? "back" : "front";
-    person.flip = false;
-  }
-}
-
-function addFloater(text, x, y, color) {
-  state.floaters.push({ text, x, y, color, life: 0.82, vy: -58 });
-  trimRuntimeArray(state.floaters, MAX_ACTIVE_FLOATERS);
-}
-
-function addJarramplasImpact(x, y, owner) {
-  const baseColor = owner === "player" ? impactEffectConfig.playerBurstColor : impactEffectConfig.crowdBurstColor;
-  for (let i = 0; i < impactEffectConfig.particleCount; i += 1) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 70 + Math.random() * 210;
-    const color = impactEffectConfig.sparkColors[i % impactEffectConfig.sparkColors.length];
-    state.particles.push({
-      x,
-      y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - 25,
-      r: 2.5 + Math.random() * 4,
-      color,
-      life: impactEffectConfig.duration * (0.72 + Math.random() * 0.55),
-      maxLife: impactEffectConfig.duration,
-    });
-  }
-  trimRuntimeArray(state.particles, MAX_ACTIVE_PARTICLES);
-}
-
-function formatTime(seconds) {
-  const total = Math.ceil(seconds);
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
-  return `${minutes}:${rest.toString().padStart(2, "0")}`;
-}
+const { addFloater, addJarramplasImpact, updateEffects } = createEffects({
+  state,
+  impactEffectConfig,
+  limits: runtimeLimits,
+});
 
 function launchOrigin() {
   return {
@@ -947,67 +675,17 @@ function launchOrigin() {
   };
 }
 
-function formatHudValue() {
-  if (state.gameType === "timed") return formatTime(finiteNumber(state.timeLeft));
-  if (state.gameType === "survival") return `${Math.max(0, Math.ceil(finiteNumber(state.jarramplasHealth)))}%`;
-  if (state.gameType === "limitedTurnips") return `${Math.max(0, finiteNumber(state.turnipsLeft))}`;
-  return `${Math.max(0, maxPeopleHits() - finiteNumber(state.peopleHits))}`;
-}
-
-function hudModeLabel() {
-  if (state.gameType === "timed") return "Tiempo";
-  if (state.gameType === "survival") return "Vida";
-  if (state.gameType === "limitedTurnips") return "Nabos";
-  return "Avisos";
-}
-
-function updateHud() {
-  const previousScore = state.hudLastScore;
-  const scoreDelta = previousScore === null ? 0 : state.score - previousScore;
-  state.hudLastScore = state.score;
-  state.hudScore += (state.score - state.hudScore) * 0.32;
-  if (Math.abs(state.score - state.hudScore) < 0.5) state.hudScore = state.score;
-
-  scoreEl.innerHTML = `<span class="hud-label">Puntos</span><strong>${formatNumber(Math.round(state.hudScore))}</strong><small>pts</small>`;
-  if (scoreDelta !== 0) {
-    scoreEl.dataset.delta = `${scoreDelta > 0 ? "+" : ""}${formatNumber(scoreDelta)}`;
-    scoreEl.classList.remove("is-gain", "is-penalty");
-    void scoreEl.offsetWidth;
-    scoreEl.classList.add(scoreDelta > 0 ? "is-gain" : "is-penalty");
-  }
-
-  const hudValue = formatHudValue();
-  timeEl.innerHTML = `<span class="hud-label">${hudModeLabel()}</span><strong>${hudValue}</strong>`;
-  timeEl.classList.toggle("is-urgent", state.gameType === "timed" && state.timeLeft <= 10);
-  if (state.hudLastTimeValue && state.hudLastTimeValue !== hudValue) {
-    timeEl.classList.remove("is-tick");
-    void timeEl.offsetWidth;
-    timeEl.classList.add("is-tick");
-  }
-  state.hudLastTimeValue = hudValue;
-
-  comboEl.innerHTML = `<span class="hud-label">Combo</span><strong>x${formatNumber(state.comboMultiplier)}</strong><small>${formatNumber(state.comboCount)}</small>`;
-  comboEl.classList.toggle("is-hot", state.comboMultiplier > 1);
-  if (state.hudLastCombo !== null && state.hudLastCombo !== state.comboMultiplier) {
-    comboEl.classList.remove("is-pop");
-    void comboEl.offsetWidth;
-    comboEl.classList.add("is-pop");
-  }
-  state.hudLastCombo = state.comboMultiplier;
-
-  recordEl.innerHTML = `<span class="hud-label">Récord</span><strong>${formatNumber(getRecord(state.gameType, state.difficulty))}</strong><small>pts</small>`;
-}
-
-function advanceCombo() {
-  state.comboCount += 1;
-  state.comboMultiplier = Math.min(5, Math.max(1, state.comboCount));
-  return state.comboMultiplier;
-}
-
-function resetCombo() {
-  state.comboCount = 0;
-  state.comboMultiplier = 1;
-}
+const { updateHud, advanceCombo, resetCombo } = createHud({
+  scoreEl,
+  timeEl,
+  comboEl,
+  recordEl,
+  state,
+  getRecord,
+  formatNumber,
+  finiteNumber,
+  maxPeopleHits,
+});
 
 function showShareFeedback(button, message) {
   if (!button) {
@@ -1094,84 +772,23 @@ function shareResult(event) {
   );
 }
 
-function pickJarramplasTarget(now) {
-  const j = state.jarramplas;
-  const config = difficultyConfig[state.difficulty];
-  const margin = j.w * 0.76;
-  j.targetX = margin + Math.random() * Math.max(1, state.w - margin * 2);
-  j.targetY = state.h * (jarramplasMovementConfig.minYRatio + Math.random() * (jarramplasMovementConfig.maxYRatio - jarramplasMovementConfig.minYRatio));
-  j.nextMoveAt = now + 520 + Math.random() * (1150 / config.speed);
-}
+const { updateJarramplasMotion } = createJarramplasMotion({
+  state,
+  difficultyConfig,
+  jarramplasMovementConfig,
+});
 
-function updateJarramplasMotion(now, dt) {
-  const j = state.jarramplas;
-  const config = difficultyConfig[state.difficulty];
-  if (!j.nextMoveAt || now > j.nextMoveAt || Math.hypot(j.targetX - j.x, j.targetY - j.y) < 10) {
-    pickJarramplasTarget(now);
-  }
-  const dx = j.targetX - j.x;
-  const dy = j.targetY - j.y;
-  const accel = 4.8 + config.speed * 1.8;
-  j.vx += dx * accel * dt;
-  j.vy += dy * accel * dt;
-  const damping = Math.pow(0.08, dt);
-  j.vx *= damping;
-  j.vy *= damping;
-  const maxSpeed = 118 + config.speed * 42;
-  const speed = Math.hypot(j.vx, j.vy);
-  if (speed > maxSpeed) {
-    j.vx = (j.vx / speed) * maxSpeed;
-    j.vy = (j.vy / speed) * maxSpeed;
-  }
-  if (speed > 8) {
-    j.direction = Math.abs(j.vx) > Math.abs(j.vy) * 1.15
-      ? (j.vx < 0 ? "left" : "right")
-      : (j.vy < 0 ? "up" : "down");
-  }
-  j.x += j.vx * dt;
-  j.y += j.vy * dt;
-  j.x = Math.max(j.w * 0.72, Math.min(state.w - j.w * 0.72, j.x));
-  j.y = Math.max(state.h * jarramplasMovementConfig.minYRatio, Math.min(state.h * jarramplasMovementConfig.maxYRatio, j.y));
-  j.walkFrame = Math.floor(now / 120) % 16;
-  j.flash = Math.max(0, (j.flash || 0) - dt);
-}
-
-function maxLaunchDrag() {
-  return Math.min(state.w, state.h) * 0.62;
-}
-
-function launchMotion(from, to, owner) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const distance = Math.hypot(dx, dy);
-  const power = Math.min(distance, maxLaunchDrag());
-  const angle = Math.atan2(dy, dx);
-
-  if (owner !== "player") {
-    const speed = 365 + Math.random() * 70;
-    return {
-      power,
-      pull: 1,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      gravity: CROWD_TURNIP_GRAVITY,
-    };
-  }
-
-  const pull = clamp(power / maxLaunchDrag(), 0, 1);
-  const easedPull = easeOutQuad(pull);
-  const speed = lerp(PLAYER_MIN_LAUNCH_SPEED, PLAYER_MAX_LAUNCH_SPEED, easedPull);
-  const gravity = lerp(PLAYER_MIN_GRAVITY, PLAYER_MAX_GRAVITY, easedPull);
-  const arcAngle = angle - lerp(0.02, 0.1, easedPull);
-
-  return {
-    power,
-    pull,
-    vx: Math.cos(arcAngle) * speed,
-    vy: Math.sin(arcAngle) * speed,
-    gravity,
-  };
-}
+const { launchMotion, updateTurnipMotion } = createTurnipMotion({
+  state,
+  clamp,
+  easeOutQuad,
+  lerp,
+  playerMinLaunchSpeed: PLAYER_MIN_LAUNCH_SPEED,
+  playerMaxLaunchSpeed: PLAYER_MAX_LAUNCH_SPEED,
+  playerMinGravity: PLAYER_MIN_GRAVITY,
+  playerMaxGravity: PLAYER_MAX_GRAVITY,
+  crowdTurnipGravity: CROWD_TURNIP_GRAVITY,
+});
 
 function launchTurnip(from, to, owner) {
   const motion = launchMotion(from, to, owner);
@@ -1206,115 +823,15 @@ function launchTurnip(from, to, owner) {
   updateHud();
 }
 
-function updateTurnipMotion(turnip, dt) {
-  const stepCount = Math.max(1, Math.ceil(dt / (1 / 120)));
-  const stepDt = dt / stepCount;
-  const gravity = turnip.gravity || CROWD_TURNIP_GRAVITY;
-
-  for (let i = 0; i < stepCount; i += 1) {
-    turnip.x += turnip.vx * stepDt;
-    turnip.y += turnip.vy * stepDt;
-    turnip.vy += gravity * stepDt;
-  }
-}
-
-function resetMenuDemo(now = performance.now()) {
-  state.people = [];
-  state.turnips = [];
-  state.floaters = [];
-  state.particles = [];
-  state.drag = null;
-  assets.jarramplas = assets.jarramplasVariants.length
-    ? assets.jarramplasVariants[Math.floor(Math.random() * assets.jarramplasVariants.length)].frames
-    : emptyJarramplasFrames();
-  state.jarramplas.x = state.w * 0.5;
-  state.jarramplas.y = state.h * (state.h < 700 ? 0.2 : 0.34);
-  state.jarramplas.vx = 0;
-  state.jarramplas.vy = 0;
-  state.jarramplas.direction = "down";
-  state.jarramplas.walkFrame = 0;
-  state.jarramplas.flash = 0;
-  state.menuDemoNextThrowAt = now + 450;
-  state.menuDemoReady = true;
-}
-
-function addMenuDemoTurnip(now) {
-  const fromLeft = Math.random() < 0.5;
-  const from = {
-    x: fromLeft ? -28 : state.w + 28,
-    y: state.h * (0.58 + Math.random() * 0.14),
-  };
-  const target = {
-    x: state.jarramplas.x + (Math.random() - 0.5) * state.jarramplas.w * 0.5,
-    y: state.jarramplas.y + state.jarramplas.h * 0.28,
-  };
-  const dx = target.x - from.x;
-  const dy = target.y - from.y;
-  const angle = Math.atan2(dy, dx);
-  const speed = 430 + Math.random() * 90;
-  state.turnips.push({
-    x: from.x,
-    y: from.y,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed - 25,
-    gravity: 145,
-    r: Math.max(12, Math.min(state.w, state.h) * 0.028),
-    spin: Math.random() * 6.28,
-    owner: "crowd",
-    hit: false,
-    menuDemo: true,
-  });
-  state.menuDemoNextThrowAt = now + 620 + Math.random() * 520;
-  trimRuntimeArray(state.turnips, MAX_ACTIVE_TURNIPS);
-}
-
-function updateMenuDemo(now, dt) {
-  if (!assets.ready) return;
-  if (!state.menuDemoReady) resetMenuDemo(now);
-
-  const j = state.jarramplas;
-  const menuSize = Math.min(state.w * 0.2, state.h * 0.12, 88);
-  j.w = menuSize;
-  j.h = menuSize * 1.72;
-  const t = now / 1000;
-  const targetX = state.w * 0.5 + Math.sin(t * 0.72) * state.w * 0.18;
-  const targetYRatio = state.h < 700 ? 0.19 : 0.34;
-  const targetY = state.h * targetYRatio + Math.sin(t * 1.1) * state.h * 0.018;
-  j.vx += (targetX - j.x) * 10 * dt;
-  j.vy += (targetY - j.y) * 10 * dt;
-  j.vx *= Math.pow(0.05, dt);
-  j.vy *= Math.pow(0.05, dt);
-  j.x += j.vx * dt;
-  j.y += j.vy * dt;
-  j.direction = j.vx < -6 ? "left" : j.vx > 6 ? "right" : "down";
-  j.walkFrame = Math.floor(now / 130) % 16;
-  j.flash = Math.max(0, (j.flash || 0) - dt);
-
-  if (now >= state.menuDemoNextThrowAt) addMenuDemoTurnip(now);
-
-  const jBox = { x: j.x, y: j.y + j.h * 0.72, w: j.w * 0.75, h: j.h * 0.72 };
-  for (const turnip of state.turnips) {
-    updateTurnipMotion(turnip, dt);
-    turnip.spin += dt * 10;
-    if (!turnip.hit && rectCircleHit(jBox, turnip)) {
-      turnip.hit = true;
-      j.flash = 0.16;
-      addJarramplasImpact(turnip.x, turnip.y, "crowd");
-    }
-  }
-  state.turnips = state.turnips.filter((t) => {
-    const inBounds = t.x > -90 && t.x < state.w + 90 && t.y > -120 && t.y < state.h + 120;
-    return !t.hit && inBounds;
-  });
-}
-
-function rectCircleHit(rect, circle) {
-  const rx = rect.x - rect.w / 2;
-  const ry = rect.y - rect.h;
-  const cx = Math.max(rx, Math.min(circle.x, rx + rect.w));
-  const cy = Math.max(ry, Math.min(circle.y, ry + rect.h));
-  return Math.hypot(circle.x - cx, circle.y - cy) < circle.r * 0.8;
-}
+const { resetMenuDemo, updateMenuDemo } = createMenuDemo({
+  state,
+  assets,
+  emptyJarramplasFrames,
+  updateTurnipMotion,
+  rectCircleHit,
+  addJarramplasImpact,
+  limits: runtimeLimits,
+});
 
 function update(now) {
   const dt = Math.min((now - state.last) / 1000, 0.033);
@@ -1453,333 +970,18 @@ function update(now) {
     }
   }
 
-  for (const floater of state.floaters) {
-    floater.life -= dt;
-    floater.y += floater.vy * dt;
-  }
-  state.floaters = state.floaters.filter((f) => f.life > 0);
-
-  for (const particle of state.particles) {
-    particle.life -= dt;
-    particle.x += particle.vx * dt;
-    particle.y += particle.vy * dt;
-    particle.vy += 310 * dt;
-    particle.vx *= Math.pow(0.12, dt);
-  }
-  state.particles = state.particles.filter((particle) => particle.life > 0);
+  updateEffects(dt);
   enforceRuntimeLimits();
 }
 
-function drawSprite(frame, x, y, h, flip = false, alpha = 1) {
-  if (!frame || !frame.img.complete) return;
-  const w = h * (frame.w / frame.h);
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  if (flip) {
-    ctx.translate(x, 0);
-    ctx.scale(-1, 1);
-    x = 0;
-  }
-  ctx.drawImage(frame.img, x - w / 2, y - h, w, h);
-  ctx.restore();
-}
-
-function drawTurnip(x, y, size, spin = 0) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(spin);
-  ctx.fillStyle = "#efe1c1";
-  ctx.strokeStyle = "rgba(84, 58, 35, 0.5)";
-  ctx.lineWidth = Math.max(1, size * 0.06);
-  ctx.beginPath();
-  ctx.ellipse(-size * 0.06, 0, size * 0.42, size * 0.28, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#5eb356";
-  ctx.beginPath();
-  ctx.moveTo(size * 0.26, -size * 0.04);
-  ctx.lineTo(size * 0.58, -size * 0.24);
-  ctx.lineTo(size * 0.5, size * 0.04);
-  ctx.lineTo(size * 0.66, size * 0.18);
-  ctx.lineTo(size * 0.28, size * 0.1);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawRoundedRect(x, y, w, h, radius) {
-  const r = Math.min(radius, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function drawLaunchHint(origin, turnipSize) {
-  const text = "Arrastra el nabo hacia adelante para lanzarlo";
-  const maxWidth = Math.min(state.w - 32, 310);
-  const fontSize = Math.max(15, Math.min(18, state.w * 0.042));
-  const lineHeight = fontSize * 1.25;
-  const words = text.split(" ");
-  const lines = [];
-  let line = "";
-
-  ctx.save();
-  ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
-  for (const word of words) {
-    const nextLine = line ? `${line} ${word}` : word;
-    if (ctx.measureText(nextLine).width > maxWidth - 28 && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = nextLine;
-    }
-  }
-  if (line) lines.push(line);
-
-  const boxW = Math.min(maxWidth, Math.max(...lines.map((item) => ctx.measureText(item).width)) + 28);
-  const boxH = lines.length * lineHeight + 18;
-  const x = Math.max(16, Math.min(state.w - boxW - 16, origin.x - boxW / 2));
-  const y = Math.max(58, origin.y - turnipSize * 0.92 - boxH);
-  const pointerX = origin.x;
-  const pointerY = y + boxH + 9;
-
-  ctx.fillStyle = "rgba(28, 22, 16, 0.82)";
-  ctx.strokeStyle = "rgba(255, 246, 223, 0.78)";
-  ctx.lineWidth = 1.5;
-  drawRoundedRect(x, y, boxW, boxH, 8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(pointerX - 9, y + boxH - 1);
-  ctx.lineTo(pointerX + 9, y + boxH - 1);
-  ctx.lineTo(pointerX, pointerY);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "#fff6df";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  lines.forEach((item, index) => {
-    ctx.fillText(item, x + boxW / 2, y + 12 + lineHeight * (index + 0.5));
-  });
-  ctx.restore();
-}
-
-function drawBackground() {
-  ctx.clearRect(0, 0, state.w, state.h);
-  if (assets.background) {
-    const bg = assets.background;
-    const scale = Math.max(state.w / bg.w, state.h / bg.h);
-    const w = bg.w * scale;
-    const h = bg.h * scale;
-    ctx.drawImage(bg.img, (state.w - w) / 2, (state.h - h) / 2, w, h);
-    ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
-    ctx.fillRect(0, 0, state.w, state.h);
-    return;
-  }
-  const sky = ctx.createLinearGradient(0, 0, 0, state.h);
-  sky.addColorStop(0, "#202624");
-  sky.addColorStop(0.46, "#33342d");
-  sky.addColorStop(1, "#211d18");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, state.w, state.h);
-  ctx.fillStyle = "#4d4740";
-  for (let i = 0; i < 26; i += 1) {
-    ctx.fillRect(((i * 83) % (state.w + 80)) - 40, state.h * 0.36 + ((i * 31) % 44), 52, 3);
-  }
-  ctx.fillStyle = "#171511";
-  ctx.fillRect(0, state.h * 0.72, state.w, state.h * 0.28);
-  ctx.fillStyle = "rgba(255,255,255,0.06)";
-  for (let i = 0; i < 18; i += 1) {
-    ctx.fillRect((i * 97) % state.w, state.h * (0.75 + (i % 4) * 0.05), 46, 2);
-  }
-}
-
-function drawPerson(person) {
-  const groups = assets.people[person.facing];
-  const group = groups[person.groupId % Math.max(1, groups.length)];
-  if (!group) return;
-  const anim = person.throwAnim > 0 ? group.throw : group.walk;
-  const frameT = person.throwAnim > 0 ? person.throwT : person.animT;
-  const frame = anim[Math.floor(frameT) % anim.length];
-  const y = person.y + Math.sin(person.animT * 0.7) * 2;
-  ctx.fillStyle = "rgba(0,0,0,0.32)";
-  ctx.beginPath();
-  ctx.ellipse(person.x, y + 2, person.w * 0.48, person.w * 0.12, 0, 0, Math.PI * 2);
-  ctx.fill();
-  drawSprite(frame, person.x, y, person.h, person.flip);
-}
-
-function drawJarramplas() {
-  const j = state.jarramplas;
-  const directionFrames = assets.jarramplas[j.direction] || [];
-  const walkFrames = directionFrames.length ? directionFrames : (assets.jarramplas.down || []);
-  const frame = walkFrames[j.walkFrame % Math.max(1, walkFrames.length)];
-  drawSprite(frame, j.x, j.y + j.h, j.h);
-  if (j.flash > 0) {
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    drawSprite(frame, j.x, j.y + j.h, j.h, false, Math.min(0.75, j.flash * 3.4));
-    ctx.restore();
-  }
-  if (state.mode === "playing" && state.gameType === "survival") {
-    const w = j.w * 0.9;
-    const h = 9;
-    const x = j.x - w / 2;
-    const y = j.y + 8;
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1;
-    ctx.fillRect(x, y, w, h);
-    ctx.stroke();
-    ctx.fillStyle = state.jarramplasHealth > 35 ? "#5dbb63" : "#d93c2f";
-    ctx.fillRect(x + 1, y + 1, (w - 2) * Math.max(0, state.jarramplasHealth / 100), h - 2);
-    ctx.restore();
-  }
-}
-
-function drawParticles() {
-  for (const particle of state.particles) {
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / particle.maxLife));
-    ctx.fillStyle = particle.color;
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-function drawTimedCountdown() {
-  if (state.mode !== "playing" || state.gameType !== "timed" || state.timeLeft > 10) return;
-  const value = Math.max(0, Math.ceil(state.timeLeft));
-  ctx.save();
-  ctx.globalAlpha = 0.28;
-  ctx.fillStyle = "#fff6df";
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
-  ctx.lineWidth = Math.max(5, state.w * 0.025);
-  ctx.font = `950 ${Math.min(state.w * 0.48, state.h * 0.28)}px system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.strokeText(String(value), state.w / 2, state.h / 2);
-  ctx.fillText(String(value), state.w / 2, state.h / 2);
-  ctx.restore();
-}
-
-function drawLaunchTrajectory(drag) {
-  const motion = launchMotion(drag.start, drag.current, "player");
-  if (motion.power < 20) return;
-
-  const points = [];
-  const steps = 19;
-  const stepTime = 0.04;
-  let x = drag.start.x;
-  let y = drag.start.y;
-  let vx = motion.vx;
-  let vy = motion.vy;
-
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = "rgba(255, 246, 223, 0.34)";
-  ctx.lineWidth = Math.max(2, Math.min(state.w, state.h) * 0.006);
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-
-  for (let i = 0; i < steps; i += 1) {
-    x += vx * stepTime;
-    y += vy * stepTime;
-    vy += motion.gravity * stepTime;
-    points.push({ x, y });
-    ctx.lineTo(x, y);
-    if (x < -40 || x > state.w + 40 || y < -80 || y > state.h + 80) break;
-  }
-  ctx.stroke();
-
-  for (let i = 1; i < points.length; i += 3) {
-    const point = points[i];
-    const fade = 1 - i / points.length;
-    ctx.globalAlpha = 0.28 + fade * 0.55;
-    ctx.fillStyle = "#fff0bd";
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, lerp(2.2, 4.8, motion.pull) * fade + 1.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.globalAlpha = 0.85;
-  ctx.strokeStyle = "rgba(55, 33, 12, 0.42)";
-  ctx.lineWidth = Math.max(5, Math.min(state.w, state.h) * 0.012);
-  ctx.beginPath();
-  ctx.moveTo(drag.start.x, drag.start.y);
-  ctx.lineTo(drag.current.x, drag.current.y);
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(255, 246, 223, 0.9)";
-  ctx.lineWidth = Math.max(2, Math.min(state.w, state.h) * 0.006);
-  ctx.beginPath();
-  ctx.moveTo(drag.start.x, drag.start.y);
-  ctx.lineTo(drag.current.x, drag.current.y);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function render() {
-  drawBackground();
-  const drawables = [
-    ...state.people.map((person) => ({ y: person.y, draw: () => drawPerson(person) })),
-    { y: state.jarramplas.y + state.jarramplas.h * 0.52, draw: drawJarramplas },
-  ].sort((a, b) => a.y - b.y);
-  for (const item of drawables) item.draw();
-  for (const turnip of state.turnips) drawTurnip(turnip.x, turnip.y, turnip.r * 2, turnip.spin);
-  drawParticles();
-  drawTimedCountdown();
-
-  if (state.mode === "playing") {
-    const origin = launchOrigin();
-    const size = Math.max(34, Math.min(state.w, state.h) * 0.085);
-    ctx.save();
-    ctx.globalAlpha = state.gameType === "limitedTurnips" && state.turnipsLeft <= 0 ? 0.38 : 1;
-    ctx.fillStyle = "rgba(0,0,0,0.34)";
-    ctx.beginPath();
-    ctx.ellipse(origin.x, origin.y + size * 0.28, size * 0.48, size * 0.13, 0, 0, Math.PI * 2);
-    ctx.fill();
-    drawTurnip(origin.x, origin.y, size, 0);
-    if (!state.hasPressedGameWindow) drawLaunchHint(origin, size);
-    ctx.restore();
-  }
-
-  if (state.drag) {
-    drawLaunchTrajectory(state.drag);
-    drawTurnip(state.drag.start.x, state.drag.start.y, Math.max(30, state.w * 0.075), 0);
-  }
-
-  for (const floater of state.floaters) {
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, floater.life / 0.45));
-    ctx.fillStyle = floater.color;
-    ctx.font = "900 28px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = "rgba(0,0,0,0.55)";
-    ctx.strokeText(floater.text, floater.x, floater.y);
-    ctx.fillText(floater.text, floater.x, floater.y);
-    ctx.restore();
-  }
-
-  if (state.mode !== "playing") {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
-    ctx.fillRect(0, 0, state.w, state.h);
-  }
-}
+const { render } = createRenderer({
+  ctx,
+  state,
+  assets,
+  launchOrigin,
+  launchMotion,
+  lerp,
+});
 
 function loop(now) {
   update(now);
@@ -1787,44 +989,12 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-function pointerPos(event) {
-  const point = event.touches ? event.touches[0] : event;
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: point.clientX - rect.left,
-    y: point.clientY - rect.top,
-  };
-}
-
-function launchStartFor(point) {
-  return launchOrigin();
-}
-
-function onPointerStart(event) {
-  if (state.mode !== "playing") return;
-  state.hasPressedGameWindow = true;
-  const p = pointerPos(event);
-  const origin = launchOrigin();
-  const grabRadius = Math.max(56, Math.min(state.w, state.h) * 0.16);
-  if (Math.hypot(p.x - origin.x, p.y - origin.y) > grabRadius) return;
-  if (state.gameType === "limitedTurnips" && state.turnipsLeft <= 0) return;
-  event.preventDefault();
-  state.drag = { start: launchStartFor(p), current: { ...p }, target: { ...p } };
-}
-
-function onPointerMove(event) {
-  if (!state.drag || state.mode !== "playing") return;
-  event.preventDefault();
-  state.drag.target = pointerPos(event);
-}
-
-function onPointerEnd(event) {
-  if (!state.drag || state.mode !== "playing") return;
-  event.preventDefault();
-  const drag = state.drag;
-  state.drag = null;
-  launchTurnip(drag.start, drag.target || drag.current, "player");
-}
+const { onPointerStart, onPointerMove, onPointerEnd } = createPointerHandlers({
+  canvas,
+  state,
+  launchOrigin,
+  launchTurnip,
+});
 
 applyLevelLabels();
 populateLeaderboardFilters();

@@ -15,8 +15,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="canonical" href="https://jarramplas.alon.one/">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
-
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
   <meta property="og:locale" content="es_ES">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Jarramplas - El Juego">
@@ -56,7 +57,20 @@
       }
     }
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260509-1">
+  <script type="module">
+    import { APP_VERSION } from "./config.js";
+
+    const version = encodeURIComponent(APP_VERSION);
+    const stylesheet = document.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = `styles.css?v=${version}`;
+    document.head.append(stylesheet);
+    await new Promise((resolve) => {
+      stylesheet.addEventListener("load", resolve, { once: true });
+      stylesheet.addEventListener("error", resolve, { once: true });
+    });
+    await import(`./game.js?v=${version}`);
+  </script>
 </head>
 <body>
   <div id="app">
@@ -234,6 +248,5 @@
       });
     }
   </script>
-  <script type="module" src="game.js?v=20260509-1"></script>
 </body>
 </html>
