@@ -20,7 +20,7 @@ async function addAllSettled(cacheName, assets) {
       if (!response || !response.ok) {
         throw new Error(`No se pudo cachear ${asset}: ${response?.status || "sin respuesta"}`);
       }
-      await cache.put(asset, response);
+      await cache.put(cleanRequest(asset), response);
       return asset;
     })
   );
@@ -62,25 +62,35 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-function isLocalRequest(request) {
-  return new URL(request.url).origin === self.location.origin;
+function requestUrl(requestOrPath) {
+  if (typeof requestOrPath === "string") return new URL(requestOrPath, self.location.href);
+  return new URL(requestOrPath.url);
 }
 
-function cleanRequest(request) {
-  const url = new URL(request.url);
+function isLocalRequest(request) {
+  return requestUrl(request).origin === self.location.origin;
+}
+
+function cleanRequest(requestOrPath) {
+  const url = requestUrl(requestOrPath);
   url.search = "";
+
+  if (typeof requestOrPath === "string") {
+    return new Request(url.toString());
+  }
+
   return new Request(url.toString(), {
-    method: request.method,
-    headers: request.headers,
-    mode: request.mode === "navigate" ? "same-origin" : request.mode,
-    credentials: request.credentials,
-    redirect: request.redirect,
-    referrer: request.referrer,
+    method: requestOrPath.method,
+    headers: requestOrPath.headers,
+    mode: requestOrPath.mode === "navigate" ? "same-origin" : requestOrPath.mode,
+    credentials: requestOrPath.credentials,
+    redirect: requestOrPath.redirect,
+    referrer: requestOrPath.referrer,
   });
 }
 
 function requestPathname(request) {
-  return new URL(request.url).pathname;
+  return requestUrl(request).pathname;
 }
 
 function isStaticAsset(request) {
