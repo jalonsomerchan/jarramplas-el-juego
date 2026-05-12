@@ -57,9 +57,12 @@
 ```
 index.html
 styles.css
+pwa-assets.js
+asset-fallbacks.js
 game.js
 config.js
 storage.js
+service-worker.js
 assets/
 tests/
 .github/workflows/
@@ -90,6 +93,39 @@ npm test
 ```
 
 Los tests levantan automáticamente un servidor estático en `http://127.0.0.1:4173` y validan que la pantalla inicial, la navegación básica y las estadísticas funcionan sin depender de Firebase real.
+
+## 📲 PWA, caché y publicación
+
+El juego usa `service-worker.js` para que la PWA funcione mejor en móvil y pueda reutilizar assets tras la primera carga.
+
+La lista de archivos cacheables está centralizada en `pwa-assets.js`:
+
+- `CORE_ASSETS`: HTML, CSS, JS, manifest, iconos y assets mínimos para arrancar.
+- `GAMEPLAY_ASSETS`: fondos, variantes de Jarramplas y frames de personajes.
+- `APP_BUILD`: versión de publicación usada para generar `CACHE_VERSION`.
+
+Estrategia actual:
+
+- Las páginas usan `network first`, con fallback a `index.html` cacheado si no hay conexión.
+- JS, CSS y manifest usan `network first` sin query string para evitar quedarse con versiones antiguas.
+- Imágenes y assets de gameplay usan `stale while revalidate`: cargan rápido desde caché y se actualizan en segundo plano.
+- El precache no bloquea la instalación si falla un asset no crítico; los errores se registran en consola.
+- Al activar una versión nueva, se eliminan cachés antiguas cuyo prefijo empieza por `jarramplas-v`.
+
+### Cómo publicar una nueva versión
+
+1. Cambia `APP_BUILD` en `pwa-assets.js`, por ejemplo:
+
+```js
+const APP_BUILD = "20260512-3";
+```
+
+2. Si añades fondos, variantes de Jarramplas o personajes, actualiza también las listas de `pwa-assets.js` para mantener el offline coherente con `config.js`.
+3. Si cambias `index.html`, `game.js`, `styles.css`, `config.js` o assets importantes, sube siempre `APP_BUILD`.
+4. Publica los archivos estáticos normalmente.
+5. En la siguiente visita, el service worker nuevo tomará control, limpiará cachés anteriores y descargará de nuevo los assets.
+
+Si un usuario sigue viendo una versión antigua, puede cerrar y abrir la PWA o recargar la página. En desarrollo, también conviene borrar el service worker desde DevTools > Application > Service Workers.
 
 ## 🌍 Ranking global con Firebase
 
