@@ -152,7 +152,10 @@ async function staleWhileRevalidateAsset(request) {
     })
     .catch(() => null);
 
-  return cached || refresh || fetch(request);
+  if (cached) return cached;
+
+  const refreshed = await refresh;
+  return refreshed || fetch(request);
 }
 
 async function cacheFirstRuntime(request) {
