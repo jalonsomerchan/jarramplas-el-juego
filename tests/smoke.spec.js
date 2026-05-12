@@ -19,6 +19,13 @@ function collectUnexpectedConsoleErrors(page) {
   return errors;
 }
 
+async function waitForHomeReady(page) {
+  await expect(page.locator("#start")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator("#loading")).not.toBeVisible({ timeout: 25_000 });
+  await expect(page.locator("#playButton")).toBeEnabled({ timeout: 25_000 });
+  await expect(page.locator("#playButton")).toHaveText(/Jugar/i, { timeout: 25_000 });
+}
+
 test("carga la pantalla inicial sin errores críticos", async ({ page }) => {
   const consoleErrors = collectUnexpectedConsoleErrors(page);
 
@@ -26,9 +33,7 @@ test("carga la pantalla inicial sin errores críticos", async ({ page }) => {
 
   await expect(page).toHaveTitle(/Jarramplas/i);
   await expect(page.locator("#game")).toBeVisible();
-  await expect(page.locator("#start")).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator("#playButton")).toBeEnabled({ timeout: 20_000 });
-  await expect(page.locator("#playButton")).toHaveText(/Jugar/i);
+  await waitForHomeReady(page);
 
   expect(consoleErrors).toEqual([]);
 });
@@ -37,7 +42,7 @@ test("permite navegar por el flujo básico de selección", async ({ page }) => {
   const consoleErrors = collectUnexpectedConsoleErrors(page);
 
   await page.goto("/");
-  await expect(page.locator("#playButton")).toBeEnabled({ timeout: 20_000 });
+  await waitForHomeReady(page);
 
   await page.locator("#playButton").click();
   await expect(page.locator("#type")).toBeVisible();
