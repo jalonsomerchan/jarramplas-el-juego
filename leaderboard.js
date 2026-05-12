@@ -6,6 +6,7 @@ const SCORE_LIMITS = {
 };
 const AUTH_STORAGE_KEY = "jarramplas.firebaseAuth.v1";
 const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
+const DEVICE_TEXT_LIMIT = 160;
 
 let anonymousAuthPromise = null;
 
@@ -24,6 +25,13 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function sanitizeText(value, fallback = "") {
+  return String(value || fallback)
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, DEVICE_TEXT_LIMIT);
+}
+
 function sanitizePlayerName(value) {
   return String(value || "")
     .trim()
@@ -33,6 +41,112 @@ function sanitizePlayerName(value) {
 
 function validKey(value, allowedKeys) {
   return Boolean(value && Object.prototype.hasOwnProperty.call(allowedKeys, value));
+}
+
+function userAgentIncludes(userAgent, value) {
+  return userAgent.toLowerCase().includes(value.toLowerCase());
+}
+
+function detectBrowser(userAgent, userAgentData = null) {
+  const brands = userAgentData?.brands || userAgentData?.fullVersionList || [];
+  const brand = brands.find((item) => !/not.?a.?brand/i.test(item.brand || ""))?.brand || "";
+  if (/edg/i.test(brand) || /edg\//i.test(userAgent)) return "Edge";
+  if (/samsung/i.test(brand) || /SamsungBrowser/i.test(userAgent)) return "Samsung Internet";
+  if (/opera|opr/i.test(brand) || /OPR\//i.test(userAgent)) return "Opera";
+  if (/firefox/i.test(brand) || /Firefox\//i.test(userAgent)) return "Firefox";
+  if (/chrome|chromium/i.test(brand) || /Chrome\//i.test(userAgent)) return "Chrome";
+  if (/Safari\//i.test(userAgent) && !/Chrome\//i.test(userAgent)) return "Safari";
+  return brand || "Desconocido";
+}
+
+function detectOS(userAgent, platform = "") {
+  if (/iPad|iPhone|iPod/i.test(userAgent)) return "iOS";
+  if (/Macintosh/i.test(userAgent) && userAgentIncludes(userAgent, "Mobile")) return "iPadOS";
+  if (/Android/i.test(userAgent)) return "Android";
+  if (/Windows/i.test(userAgent)) return "Windows";
+  if (/Mac OS X|Macintosh/i.test(userAgent) || /Mac/i.test(platform)) return "macOS";
+  if (/Linux/i.test(userAgent)) return "Linux";
+  return platform || "Desconocido";
+}
+
+function detectDeviceType(userAgent, userAgentData = null) {
+  if (userAgentData?.mobile === true) return "mobile";
+  if (/iPad|Tablet/i.test(userAgent)) return "tablet";
+  if (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent)) return "tablet";
+  if (/Mobi|iPhone|iPod|Android/i.test(userAgent)) return "mobile";
+  return "desktop";
+}
+
+function detectModel(userAgent, userAgentData = null) {
+  const model = sanitizeText(userAgentData?.model || "");
+  if (model) return model;
+  if (/iPad/i.test(userAgent) || (/Macintosh/i.test(userAgent) && userAgentIncludes(userAgent, "Mobile"))) return "iPad";
+  if (/iPhone/i.test(userAgent)) return "iPhone";
+  if (/iPod/i.test(userAgent)) return "iPod";
+  const androidModel = userAgent.match(/Android[^;]*;\s*([^;)]+)(?:\)|;)/i)?.[1];
+  if (androidModel) return sanitizeText(androidModel.replace(/Build\/.*/i, ""));
+  return "";
+}
+
+function sanitizeBrandList(brands = []) {
+  return brands
+    .map((item) => ({
+      brand: sanitizeText(item?.brand || ""),
+      version: sanitizeText(item?.version || ""),
+    }))
+    .filter((item) => item.brand)
+    .slice(0, 8);
+}
+
+async function collectDeviceInfo() {
+  try {
+    const userAgentData = navigator.userAgentData || null;
+    let highEntropy = {};
+    if (userAgentData?.getHighEntropyValues) {
+      highEntropy = await userAgentData.getHighEntropyValues([
+        "architecture",
+        "bitness",
+        "fullVersionList",
+        "model",
+        "mobile",
+        "platform",
+        "platformVersion",
+        "uaFullVersion",
+      ]).catch(() => ({}));
+    }
+    const mergedUserAgentData = { ...userAgentData, ...highEntropy };
+    const userAgent = sanitizeText(navigator.userAgent || "", "");
+    const platform = sanitizeText(mergedUserAgentData.platform || navigator.platform || "");
+    const screenInfo = window.screen || {};
+    return {
+      os: detectOS(userAgent, platform),
+      platform,
+      platformVersion: sanitizeText(mergedUserAgentData.platformVersion || ""),
+      deviceType: detectDeviceType(userAgent, mergedUserAgentData),
+      model: detectModel(userAgent, mergedUserAgentData),
+      browser: detectBrowser(userAgent, mergedUserAgentData),
+      browserVersion: sanitizeText(mergedUserAgentData.uaFullVersion || ""),
+      language: sanitizeText(navigator.language || ""),
+      languages: Array.isArray(navigator.languages) ? navigator.languages.map((language) => sanitizeText(language)).filter(Boolean).slice(0, 8) : [],
+      timezone: sanitizeText(Intl.DateTimeFormat().resolvedOptions().timeZone || ""),
+      screenWidth: Math.round(finiteNumber(screenInfo.width)),
+      screenHeight: Math.round(finiteNumber(screenInfo.height)),
+      viewportWidth: Math.round(finiteNumber(window.innerWidth)),
+      viewportHeight: Math.round(finiteNumber(window.innerHeight)),
+      devicePixelRatio: Math.round(finiteNumber(window.devicePixelRatio || 1) * 100) / 100,
+      touchPoints: Math.round(finiteNumber(navigator.maxTouchPoints)),
+      standalone: Boolean(window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone),
+      brands: sanitizeBrandList(mergedUserAgentData.fullVersionList || mergedUserAgentData.brands || []),
+      userAgent,
+    };
+  } catch {
+    return {
+      os: "Desconocido",
+      deviceType: "unknown",
+      browser: "Desconocido",
+      language: "",
+    };
+  }
 }
 
 function sanitizeScoreEntry(entry, gameTypeConfig, difficultyConfig) {
@@ -156,7 +270,27 @@ async function getAnonymousAuth() {
 }
 
 function fieldValue(value) {
-  if (typeof value === "number") return { integerValue: String(Math.round(value)) };
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? { integerValue: String(value) }
+      : { doubleValue: value };
+  }
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(fieldValue) } };
+  }
+  if (typeof value === "object") {
+    return {
+      mapValue: {
+        fields: Object.fromEntries(
+          Object.entries(value)
+            .filter(([, nestedValue]) => nestedValue !== undefined)
+            .map(([key, nestedValue]) => [key, fieldValue(nestedValue)])
+        ),
+      },
+    };
+  }
   return { stringValue: String(value) };
 }
 
@@ -172,6 +306,7 @@ function valueFromField(field) {
   if (!field || typeof field !== "object") return "";
   if ("integerValue" in field) return Number(field.integerValue);
   if ("doubleValue" in field) return Number(field.doubleValue);
+  if ("booleanValue" in field) return Boolean(field.booleanValue);
   if ("stringValue" in field) return field.stringValue;
   return "";
 }
@@ -222,9 +357,10 @@ export function isGlobalLeaderboardConfigured() {
 export async function submitGlobalScore(entry, gameTypeConfig, difficultyConfig) {
   if (!hasFirebaseConfig()) return { ok: false, reason: "disabled" };
   const safeEntry = sanitizeScoreEntry(entry, gameTypeConfig, difficultyConfig);
+  const device = await collectDeviceInfo();
   await fetchFirestore(firestoreUrl(firebaseConfig.collectionName || "scores"), {
     method: "POST",
-    body: JSON.stringify(documentFromScore(safeEntry)),
+    body: JSON.stringify(documentFromScore({ ...safeEntry, device })),
   });
   return { ok: true };
 }
