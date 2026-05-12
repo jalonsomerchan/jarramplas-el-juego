@@ -55,6 +55,7 @@ const scenarioOptions = document.getElementById("scenarioOptions");
 const jarramplasOptions = document.getElementById("jarramplasOptions");
 const screens = {
   start: document.getElementById("start"),
+  challenge: document.getElementById("challenge"),
   type: document.getElementById("type"),
   select: document.getElementById("select"),
   scenario: document.getElementById("scenario"),
@@ -99,6 +100,9 @@ const state = {
   pendingDifficulty: "day19Morning",
   pendingScenarioIndex: 0,
   pendingJarramplasIndex: null,
+  activeChallenge: null,
+  challengeResult: null,
+  matchSeed: 0,
   w: 0,
   h: 0,
   score: 0,
@@ -110,6 +114,8 @@ const state = {
   peoplePenalty: 0,
   comboCount: 0,
   comboMultiplier: 1,
+  maxComboCount: 0,
+  maxComboMultiplier: 1,
   timeLeft: 60,
   elapsed: 0,
   totalPaused: 0,
@@ -136,8 +142,13 @@ const state = {
   nextPersonAt: 0,
   scenarioIndex: 0,
   jarramplasIndex: null,
+  activeJarramplasIndex: 0,
   tutorialNextScreen: "type",
+  gameplayRandom: null,
 };
+
+let resultScoreAnimationFrame = 0;
+const challengeTypes = new Set(["score", "precision", "limited"]);
 
 function trimRuntimeArray(items, maxItems) {
   if (items.length > maxItems) items.splice(0, items.length - maxItems);
@@ -160,6 +171,162 @@ const trackEvent = createEventTracker({
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function randomNumber() {
+  return typeof state.gameplayRandom === "function" ? state.gameplayRandom() : Math.random();
+}
+
+function createSeededRandom(seed) {
+  let value = Math.abs(Math.floor(finiteNumber(seed, Date.now()))) || 1;
+  return () => {
+    value |= 0;
+    value = (value + 0x6D2B79F5) | 0;
+    let result = Math.imul(value ^ (value >>> 15), 1 | value);
+    result ^= result + Math.imul(result ^ (result >>> 7), 61 | result);
+    return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function sanitizeChallengeName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 24);
+}
+
+function challengeTargetValue(type, target) {
+  if (type === "precision") return clamp(Math.round(finiteNumber(target)), 1, 100);
+  return Math.max(1, Math.round(finiteNumber(target)));
+}
+
+function challengeGameTypeFor(type, mode) {
+  if (gameTypeConfig[mode]) return mode;
+  if (type === "limited") return "limitedTurnips";
+  return "timed";
+}
+
+function challengeScenarioIndex(seed) {
+  return assets.backgrounds.length ? Math.abs(Math.floor(seed)) % assets.backgrounds.length : 0;
+}
+
+function challengeJarramplasIndex(seed) {
+  return assets.jarramplasVariants.length ? Math.abs(Math.floor(seed * 7 + 3)) % assets.jarramplasVariants.length : 0;
+}
+
+function parseChallengeFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const type = String(params.get("challenge") || "").trim();
+  const level = params.get("level");
+  if (!challengeTypes.has(type) || !difficultyConfig[level]) return null;
+  const seed = Math.abs(Math.floor(finiteNumber(params.get("seed"), Date.now())));
+  const target = challengeTargetValue(type, params.get("target"));
+  if (!target) return null;
+  const challengerName = sanitizeChallengeName(params.get("usuario") || params.get("user")) || "Un amigo";
+  const gameType = challengeGameTypeFor(type, params.get("mode"));
+  const scenarioIndexParam = params.get("scenario");
+  const jarramplasIndexParam = params.get("jarramplas");
+  const hasScenarioIndex = scenarioIndexParam !== null && scenarioIndexParam !== "";
+  const hasJarramplasIndex = jarramplasIndexParam !== null && jarramplasIndexParam !== "";
+  return {
+    active: true,
+    type,
+    difficulty: level,
+    gameType,
+    seed,
+    target,
+    challengerName,
+    scenarioIndex: hasScenarioIndex && Number.isInteger(Number(scenarioIndexParam))
+      ? clamp(Math.floor(Number(scenarioIndexParam)), 0, Math.max(0, assets.backgrounds.length - 1))
+      : challengeScenarioIndex(seed),
+    jarramplasIndex: hasJarramplasIndex && Number.isInteger(Number(jarramplasIndexParam))
+      ? clamp(Math.floor(Number(jarramplasIndexParam)), 0, Math.max(0, assets.jarramplasVariants.length - 1))
+      : challengeJarramplasIndex(seed),
+  };
+}
+
+function challengeModeLabel(challenge) {
+  return gameTypeConfig[challenge.gameType]?.label || challenge.gameType;
+}
+
+function challengeGoalLabel(challenge) {
+  if (challenge.type === "precision") return `Consigue más del ${formatNumber(challenge.target)}% de precisión`;
+  if (challenge.type === "limited") return `Logra ${formatNumber(challenge.target)} pts con nabos limitados`;
+  return `Supera ${formatNumber(challenge.target)} pts`;
+}
+
+function challengeIntroCopy(challenge) {
+  if (challenge.type === "precision") return `${challenge.challengerName} te reta a lanzar con más precisión que su partida.`;
+  if (challenge.type === "limited") return `${challenge.challengerName} te reta a puntuar con muy pocos nabos.`;
+  return `${challenge.challengerName} te ha retado a mejorar su partida.`;
+}
+
+function challengeMetricValue(challenge) {
+  if (!challenge) return 0;
+  if (challenge.type === "precision") return accuracyPercentValue(state.jarramplasHits, state.playerTurnipsThrown);
+  return Math.round(state.score);
+}
+
+function evaluateChallengeResult(challenge) {
+  if (!challenge) return null;
+  const value = challengeMetricValue(challenge);
+  return {
+    won: value > challenge.target,
+    actual: value,
+    target: challenge.target,
+    type: challenge.type,
+  };
+}
+
+function buildChallengeUrl(challenge, challengerName = getPlayerName(), targetValue = null) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  const params = url.searchParams;
+  params.set("challenge", challenge.type);
+  params.set("level", challenge.difficulty);
+  params.set("seed", String(challenge.seed));
+  params.set("target", String(targetValue ?? challenge.target));
+  params.set("usuario", sanitizeChallengeName(challengerName) || "Jugador");
+  params.set("mode", challenge.gameType);
+  params.set("scenario", String(challenge.scenarioIndex));
+  params.set("jarramplas", String(challenge.jarramplasIndex));
+  return url.toString();
+}
+
+function clearChallengeUrl() {
+  const url = new URL(window.location.href);
+  if (!url.search) return;
+  url.search = "";
+  window.history.replaceState({}, "", url.toString());
+}
+
+function challengeShareMessage(challenge, challengerName = getPlayerName(), targetValue = null) {
+  const goalValue = targetValue ?? challenge.target;
+  const safeName = sanitizeChallengeName(challengerName) || "Jugador";
+  const modeLabel = gameTypeConfig[challenge.gameType]?.label || challenge.gameType;
+  const levelLabel = difficultyConfig[challenge.difficulty]?.shareLabel || difficultyConfig[challenge.difficulty]?.label || challenge.difficulty;
+  if (challenge.type === "precision") {
+    return `${safeName} te reto a que superes mi precisión en el Juego de Jarramplas. He obtenido ${formatNumber(goalValue)}% de precisión en el modo ${modeLabel} el ${levelLabel}.`;
+  }
+  if (challenge.type === "limited") {
+    return `${safeName} te reto a que superes mi puntuación en el Juego de Jarramplas. He obtenido ${formatNumber(goalValue)} puntos en el modo ${modeLabel} el ${levelLabel}.`;
+  }
+  return `${safeName} te reto a que superes mi puntuación en el Juego de Jarramplas. He obtenido ${formatNumber(goalValue)} puntos en el modo ${modeLabel} el ${levelLabel}.`;
+}
+
+function currentMatchChallenge(type = null, target = null) {
+  const challengeType = type || (state.gameType === "limitedTurnips" ? "limited" : "score");
+  return {
+    active: true,
+    type: challengeType,
+    difficulty: state.difficulty,
+    gameType: challengeGameTypeFor(challengeType, state.gameType),
+    seed: state.matchSeed || Math.floor(Date.now() % 1000000000),
+    target: target ?? challengeMetricValue({ type: challengeType }),
+    challengerName: getPlayerName(),
+    scenarioIndex: state.scenarioIndex,
+    jarramplasIndex: state.activeJarramplasIndex,
+  };
 }
 
 function clamp(value, min, max) {
@@ -316,6 +483,12 @@ async function loadAssets() {
   playButton.disabled = false;
   playButton.textContent = "Jugar";
   loadingScreen.classList.remove("is-visible");
+  state.activeChallenge = parseChallengeFromUrl();
+  state.challengeResult = null;
+  if (state.activeChallenge) {
+    openChallengeScreen();
+    return;
+  }
   state.mode = "menu";
   showScreen("start");
 }
@@ -474,6 +647,76 @@ function detailRow(label, value) {
   valueEl.textContent = value;
   row.append(labelEl, valueEl);
   return row;
+}
+
+function accuracyPercentValue(hits, total) {
+  const safeTotal = finiteNumber(total);
+  if (safeTotal <= 0) return 0;
+  return Math.round((finiteNumber(hits) / safeTotal) * 100);
+}
+
+function highlightBadge(label, tone = "default") {
+  const badge = document.createElement("span");
+  badge.className = `result-highlight is-${tone}`;
+  badge.textContent = label;
+  return badge;
+}
+
+function breakdownBar(label, valueText, percent, tone = "gold") {
+  const row = document.createElement("div");
+  const header = document.createElement("div");
+  const labelEl = document.createElement("span");
+  const valueEl = document.createElement("strong");
+  const track = document.createElement("div");
+  const fill = document.createElement("div");
+  row.className = "result-bar";
+  header.className = "result-bar-header";
+  labelEl.textContent = label;
+  valueEl.textContent = valueText;
+  track.className = "result-bar-track";
+  fill.className = `result-bar-fill is-${tone}`;
+  fill.style.width = `${clamp(finiteNumber(percent), 0, 100)}%`;
+  header.append(labelEl, valueEl);
+  track.append(fill);
+  row.append(header, track);
+  return row;
+}
+
+function stopResultScoreAnimation() {
+  if (resultScoreAnimationFrame) cancelAnimationFrame(resultScoreAnimationFrame);
+  resultScoreAnimationFrame = 0;
+}
+
+function animateResultScore(targetScore) {
+  const scoreNode = document.getElementById("finalScore");
+  if (!scoreNode) return;
+  stopResultScoreAnimation();
+  const finalScore = Math.max(0, Math.round(finiteNumber(targetScore)));
+  if (!window.matchMedia || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    scoreNode.textContent = `${formatNumber(finalScore)} pts`;
+    return;
+  }
+  const start = performance.now();
+  const duration = 980;
+  const startValue = Math.max(0, Math.round(finalScore * 0.18));
+  const tick = (now) => {
+    const progress = clamp((now - start) / duration, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const value = Math.round(startValue + (finalScore - startValue) * eased);
+    scoreNode.textContent = `${formatNumber(value)} pts`;
+    if (progress < 1) {
+      resultScoreAnimationFrame = requestAnimationFrame(tick);
+      return;
+    }
+    resultScoreAnimationFrame = 0;
+    scoreNode.textContent = `${formatNumber(finalScore)} pts`;
+  };
+  scoreNode.textContent = `${formatNumber(startValue)} pts`;
+  resultScoreAnimationFrame = requestAnimationFrame(tick);
+}
+
+function currentJarramplasVariant() {
+  return assets.jarramplasVariants[state.activeJarramplasIndex] || null;
 }
 
 function leaderboardEntry(scoreEntry, index) {
@@ -635,8 +878,69 @@ function renderStatsScreen() {
   refreshStatsLeaderboard();
 }
 
+function renderChallengeScreen(challenge) {
+  const titleEl = document.getElementById("challengeTitle");
+  const subtitleEl = document.getElementById("challengeSubtitle");
+  const goalEl = document.getElementById("challengeGoal");
+  const descriptionEl = document.getElementById("challengeDescription");
+  const detailsEl = document.getElementById("challengeDetails");
+  if (!challenge || !detailsEl) return;
+  if (titleEl) {
+    titleEl.textContent = challenge.type === "precision"
+      ? "Reto de precisión"
+      : challenge.type === "limited"
+        ? "Reto con nabos limitados"
+        : "Reto abierto";
+  }
+  if (subtitleEl) subtitleEl.textContent = challengeIntroCopy(challenge);
+  if (goalEl) {
+    goalEl.classList.remove("is-win", "is-loss", "is-muted");
+    goalEl.textContent = challengeGoalLabel(challenge);
+  }
+  if (descriptionEl) {
+    descriptionEl.textContent = "La partida usará la misma semilla, escenario y Jarramplas para que el reto sea reproducible.";
+  }
+  detailsEl.innerHTML = "";
+  detailsEl.append(
+    detailRow("Modo", challengeModeLabel(challenge)),
+    detailRow("Nivel", difficultyConfig[challenge.difficulty]?.label || challenge.difficulty),
+    detailRow("Semilla", String(challenge.seed)),
+    detailRow("Escenario", assets.backgrounds[challenge.scenarioIndex]?.name || "Aleatorio"),
+    detailRow("Jarramplas", assets.jarramplasVariants[challenge.jarramplasIndex]?.name || "Aleatorio")
+  );
+}
+
+function openChallengeScreen() {
+  const challenge = state.activeChallenge;
+  if (!challenge) return;
+  state.pendingGameType = challenge.gameType;
+  state.pendingDifficulty = challenge.difficulty;
+  state.pendingScenarioIndex = challenge.scenarioIndex;
+  state.pendingJarramplasIndex = challenge.jarramplasIndex;
+  state.mode = "challenge";
+  renderChallengeScreen(challenge);
+  showScreen("challenge");
+}
+
+function clearActiveChallenge() {
+  state.activeChallenge = null;
+  state.challengeResult = null;
+}
+
+function startActiveChallenge() {
+  const challenge = state.activeChallenge;
+  if (!challenge) return;
+  updatePlayerName(playerNameInput?.value || getPlayerName());
+  state.pendingGameType = challenge.gameType;
+  state.pendingDifficulty = challenge.difficulty;
+  state.pendingScenarioIndex = challenge.scenarioIndex;
+  state.pendingJarramplasIndex = challenge.jarramplasIndex;
+  startGame(challenge.difficulty, challenge.scenarioIndex, challenge.jarramplasIndex);
+}
+
 function chooseGameType(gameType) {
   if (!assets.ready) return;
+  clearActiveChallenge();
   state.pendingGameType = gameType;
   state.mode = "select";
   refreshLevelOptions();
@@ -670,16 +974,26 @@ function chooseLevel(difficulty) {
 
 function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   if (!assets.ready) return;
+  stopResultScoreAnimation();
   const config = difficultyConfig[difficulty];
   const type = gameTypeConfig[state.pendingGameType];
+  const activeChallenge = state.activeChallenge
+    && state.activeChallenge.difficulty === difficulty
+    && state.activeChallenge.gameType === state.pendingGameType
+    ? state.activeChallenge
+    : null;
+  state.matchSeed = activeChallenge?.seed || Math.floor(Math.random() * 1000000000);
+  state.gameplayRandom = createSeededRandom(state.matchSeed);
   const selectedJarramplasIndex = Number.isInteger(jarramplasIndex)
     ? jarramplasIndex
-    : Math.floor(Math.random() * assets.jarramplasVariants.length);
+    : Math.floor(randomNumber() * assets.jarramplasVariants.length);
   const jarramplasVariant = assets.jarramplasVariants[selectedJarramplasIndex];
   assets.jarramplas = jarramplasVariant?.frames || emptyJarramplasFrames();
   assets.background = assets.backgrounds[backgroundIndex] || null;
   state.scenarioIndex = backgroundIndex;
   state.jarramplasIndex = jarramplasIndex;
+  state.activeJarramplasIndex = selectedJarramplasIndex;
+  state.challengeResult = null;
   state.mode = "playing";
   state.gameType = state.pendingGameType;
   state.difficulty = difficulty;
@@ -692,6 +1006,8 @@ function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
   state.peoplePenalty = 0;
   state.comboCount = 0;
   state.comboMultiplier = 1;
+  state.maxComboCount = 0;
+  state.maxComboMultiplier = 1;
   state.timeLeft = type.duration || 0;
   state.elapsed = 0;
   state.totalPaused = 0;
@@ -739,6 +1055,7 @@ function startGame(difficulty, backgroundIndex = 0, jarramplasIndex = null) {
 function endGame() {
   if (state.mode !== "playing") return;
   const previousBest = getRecord(state.gameType, state.difficulty);
+  const previousStats = getStats();
   if (state.gameType === "survival") {
     state.score = Math.max(0, Math.round(
       1200
@@ -763,9 +1080,11 @@ function endGame() {
     peopleHits: state.peopleHits,
   };
   recordGameFinishStats(match);
+  state.challengeResult = evaluateChallengeResult(state.activeChallenge);
+  state.gameplayRandom = null;
   state.mode = "result";
   hud.classList.remove("is-visible");
-  renderResultScreen({ best, previousBest, improvedRecord });
+  renderResultScreen({ best, previousBest, improvedRecord, previousStats });
   trackEvent("game_finished", {
     end_reason: state.endReason || "completed",
     final_score: state.score,
@@ -789,23 +1108,125 @@ function endReasonLabel() {
   return "Partida completada";
 }
 
-function renderResultScreen({ best, previousBest, improvedRecord }) {
+function renderResultScreen({ best, previousBest, improvedRecord, previousStats }) {
   const type = gameTypeConfig[state.gameType];
   const difficulty = difficultyConfig[state.difficulty];
+  const scenario = assets.backgrounds[state.scenarioIndex] || assets.background || null;
+  const variant = currentJarramplasVariant();
   const recordEl = document.getElementById("finalRecord");
   const detail = document.getElementById("finalScoreDetail");
+  const summaryEl = document.getElementById("finalSummary");
+  const headlineEl = document.getElementById("finalHeadline");
+  const highlightsEl = document.getElementById("finalHighlights");
+  const breakdownEl = document.getElementById("finalBreakdown");
+  const recordSealEl = document.getElementById("finalRecordSeal");
+  const scenarioImageEl = document.getElementById("finalScenarioImage");
+  const jarramplasImageEl = document.getElementById("finalJarramplasImage");
+  const scenarioNameEl = document.getElementById("finalScenarioName");
+  const jarramplasNameEl = document.getElementById("finalJarramplasName");
+  const challengeOutcomeEl = document.getElementById("finalChallengeOutcome");
+  const shareResultButton = document.getElementById("shareResultButton");
   const elapsed = Math.round(state.elapsed);
-  const accuracy = formatPercent(state.jarramplasHits, state.playerTurnipsThrown);
-  document.getElementById("finalScore").textContent = `${formatNumber(state.score)} pts`;
+  const accuracyValue = accuracyPercentValue(state.jarramplasHits, state.playerTurnipsThrown);
+  const accuracy = `${accuracyValue}%`;
+  const avgScoreBeforeMatch = previousStats?.gamesFinished
+    ? finiteNumber(previousStats.totalScore) / finiteNumber(previousStats.gamesFinished)
+    : 0;
+  const localEntries = getLocalLeaderboard(state.gameType, state.difficulty);
+  const previousAccuracyBest = localEntries.reduce((bestAccuracy, entry) => (
+    Math.max(bestAccuracy, finiteNumber(entry.accuracy))
+  ), 0);
+  const isPerfectGame = state.playerTurnipsThrown > 0
+    && state.peopleHits === 0
+    && state.jarramplasHits === state.playerTurnipsThrown;
+  const isBestAccuracy = state.playerTurnipsThrown > 0
+    && (
+      !localEntries.length
+      || accuracyValue > previousAccuracyBest
+    );
+  const beatAverage = avgScoreBeforeMatch > 0 && state.score > avgScoreBeforeMatch;
+  const hasMaxCombo = state.maxComboMultiplier >= 5;
+  const summaryCopy = state.gameType === "survival"
+    ? `Resististe ${formatNumber(elapsed)} segundos, sumaste ${formatNumber(state.scoreFromHits)} por impactos y las personas te restaron ${formatNumber(state.peoplePenalty)}.`
+    : state.peoplePenalty > 0
+      ? `Tus aciertos sumaron ${formatNumber(state.scoreFromHits)} puntos y las penalizaciones te restaron ${formatNumber(state.peoplePenalty)}.`
+      : `Todo el marcador vino de tus aciertos: ${formatNumber(state.scoreFromHits)} puntos limpios.`;
+  const challengeResult = state.challengeResult;
+  animateResultScore(state.score);
   document.getElementById("finalMode").textContent = `${type.label} · ${difficulty.label} · ${endReasonLabel()}`;
   document.getElementById("finalTurnipsThrown").textContent = formatNumber(state.playerTurnipsThrown);
   document.getElementById("finalTurnipsHit").textContent = formatNumber(state.jarramplasHits);
   document.getElementById("finalPeopleHits").textContent = formatNumber(state.peopleHits);
   document.getElementById("finalAccuracy").textContent = accuracy;
+  if (headlineEl) {
+    headlineEl.textContent = isPerfectGame
+      ? "Partida perfecta"
+      : improvedRecord
+        ? "Nuevo récord"
+        : beatAverage
+          ? "Por encima de tu media"
+          : "Partida finalizada";
+  }
+  if (summaryEl) summaryEl.textContent = summaryCopy;
+  if (scenarioImageEl) {
+    scenarioImageEl.src = scenario?.path || "";
+    scenarioImageEl.alt = scenario ? `Escenario ${scenario.name}` : "";
+  }
+  if (jarramplasImageEl) {
+    jarramplasImageEl.src = jarramplasPreviewPath(variant || {});
+    jarramplasImageEl.alt = variant ? variant.name : "Jarramplas";
+  }
+  if (scenarioNameEl) scenarioNameEl.textContent = scenario?.name || "Escenario sorpresa";
+  if (jarramplasNameEl) jarramplasNameEl.textContent = variant?.name || "Jarramplas aleatorio";
+  if (recordSealEl) recordSealEl.classList.toggle("is-hidden", !improvedRecord);
+  if (shareResultButton) {
+    shareResultButton.textContent = state.activeChallenge ? "Compartir revancha" : "Compartir reto";
+  }
   recordEl.classList.toggle("is-muted", !improvedRecord);
   recordEl.textContent = improvedRecord
     ? `Nuevo récord: ${formatNumber(best)} pts (antes ${formatNumber(previousBest)} pts)`
     : `Récord de este modo: ${formatNumber(best)} pts`;
+  if (highlightsEl) {
+    highlightsEl.innerHTML = "";
+    const highlightItems = [];
+    if (isPerfectGame) highlightItems.push(highlightBadge("Partida perfecta", "gold"));
+    if (improvedRecord) highlightItems.push(highlightBadge("Nuevo récord", "record"));
+    if (isBestAccuracy) highlightItems.push(highlightBadge("Mejor precisión", "green"));
+    if (hasMaxCombo) highlightItems.push(highlightBadge("Combo máximo", "hot"));
+    if (beatAverage) highlightItems.push(highlightBadge("Has superado tu media", "sky"));
+    if (!highlightItems.length) highlightItems.push(highlightBadge(endReasonLabel(), "default"));
+    highlightsEl.append(...highlightItems);
+  }
+  if (breakdownEl) {
+    const cleanImpactRatio = accuracyValue;
+    const hitBalance = state.jarramplasHits + state.peopleHits > 0
+      ? (state.jarramplasHits / (state.jarramplasHits + state.peopleHits)) * 100
+      : accuracyValue;
+    const penaltyRatio = state.scoreFromHits + state.peoplePenalty > 0
+      ? (state.peoplePenalty / (state.scoreFromHits + state.peoplePenalty)) * 100
+      : 0;
+    breakdownEl.innerHTML = "";
+    breakdownEl.append(
+      breakdownBar("Precisión", accuracy, cleanImpactRatio, "gold"),
+      breakdownBar("Aciertos", `${formatNumber(state.jarramplasHits)} limpios`, hitBalance, "green"),
+      breakdownBar("Penalizaciones", `-${formatNumber(state.peoplePenalty)} pts`, penaltyRatio, "red")
+    );
+  }
+  if (challengeOutcomeEl) {
+    challengeOutcomeEl.classList.add("is-hidden");
+    challengeOutcomeEl.classList.remove("is-win", "is-loss", "is-muted");
+    if (challengeResult && state.activeChallenge) {
+      challengeOutcomeEl.classList.remove("is-hidden");
+      challengeOutcomeEl.classList.add(challengeResult.won ? "is-win" : "is-loss");
+      challengeOutcomeEl.textContent = challengeResult.won
+        ? state.activeChallenge.type === "precision"
+          ? `Reto superado: ${formatNumber(challengeResult.actual)}% frente al ${formatNumber(challengeResult.target)}%`
+          : `Reto superado: ${formatNumber(challengeResult.actual)} pts frente a ${formatNumber(challengeResult.target)} pts`
+        : state.activeChallenge.type === "precision"
+          ? `No llegaste al reto: ${formatNumber(challengeResult.actual)}% de ${formatNumber(challengeResult.target)}%`
+          : `No llegaste al reto: ${formatNumber(challengeResult.actual)} pts de ${formatNumber(challengeResult.target)} pts`;
+    }
+  }
   detail.innerHTML = "";
   if (state.gameType === "survival") {
     const timePenalty = Math.round(state.elapsed * 10);
@@ -822,6 +1243,7 @@ function renderResultScreen({ best, previousBest, improvedRecord }) {
     );
   }
   detail.append(
+    detailRow("Mejor combo", `x${formatNumber(state.maxComboMultiplier)}`),
     detailRow("Duración", `${formatNumber(elapsed)} s`),
     detailRow("Nabos de la gente", formatNumber(state.crowdTurnipsThrown))
   );
@@ -860,9 +1282,13 @@ function restartGame() {
 
 function goHome() {
   trackEvent("home_opened", { from_mode: state.mode });
-  state.mode = "menu";
   resetMenuDemo();
   hud.classList.remove("is-visible");
+  if (state.activeChallenge) {
+    openChallengeScreen();
+    return;
+  }
+  state.mode = "menu";
   showScreen("start");
 }
 
@@ -870,23 +1296,23 @@ function spawnPerson(initial = false) {
   const config = difficultyConfig[state.difficulty];
   const id = state.nextPersonId;
   state.nextPersonId += 1;
-  const fromLeft = Math.random() < 0.5;
-  const lane = state.h * (0.53 + Math.random() * 0.13);
-  const speed = (36 + Math.random() * 34) * config.speed;
+  const fromLeft = randomNumber() < 0.5;
+  const lane = state.h * (0.53 + randomNumber() * 0.13);
+  const speed = (36 + randomNumber() * 34) * config.speed;
   const size = Math.min(state.w * 0.18, state.h * 0.105, 80) * (0.9 + (id % 3) * 0.05);
   const person = {
     index: id,
     groupId: id,
-    x: initial ? Math.random() * state.w : (fromLeft ? -size : state.w + size),
+    x: initial ? randomNumber() * state.w : (fromLeft ? -size : state.w + size),
     y: lane,
     vx: fromLeft ? speed : -speed,
-    targetY: lane + (Math.random() - 0.5) * state.h * 0.08,
+    targetY: lane + (randomNumber() - 0.5) * state.h * 0.08,
     w: size * 0.62,
     h: size,
     facing: "side",
     flip: false,
     animT: Math.random() * 4,
-    throwTimer: 0.5 + Math.random() * 1.2,
+    throwTimer: 0.5 + randomNumber() * 1.2,
     throwAnim: 0,
     throwT: 0,
   };
@@ -1001,6 +1427,8 @@ function updateHud() {
 function advanceCombo() {
   state.comboCount += 1;
   state.comboMultiplier = Math.min(5, Math.max(1, state.comboCount));
+  state.maxComboCount = Math.max(state.maxComboCount, state.comboCount);
+  state.maxComboMultiplier = Math.max(state.maxComboMultiplier, state.comboMultiplier);
   return state.comboMultiplier;
 }
 
@@ -1055,8 +1483,8 @@ async function copyShareText(text) {
   return copyWithLegacyFallback(text);
 }
 
-async function shareText(text, button = null) {
-  const url = window.location.href.split("#")[0];
+async function shareText(text, button = null, shareUrl = null) {
+  const url = shareUrl || window.location.href.split("#")[0];
   const fullText = `${text} ${url}`;
   if (navigator.share) {
     try {
@@ -1082,15 +1510,27 @@ function shareGame(event) {
 }
 
 function shareResult(event) {
-  const type = gameTypeConfig[state.gameType];
-  const difficulty = difficultyConfig[state.difficulty];
-  trackEvent("share_result", { final_score: state.score });
+  if (state.activeChallenge) {
+    const targetValue = challengeMetricValue(state.activeChallenge);
+    const challengerName = getPlayerName();
+    trackEvent("share_challenge_revenge", {
+      challenge_type: state.activeChallenge.type,
+      challenge_target: targetValue,
+    });
+    shareText(
+      challengeShareMessage(state.activeChallenge, challengerName, targetValue),
+      event?.currentTarget,
+      buildChallengeUrl(state.activeChallenge, challengerName, targetValue)
+    );
+    return;
+  }
+  const challenge = currentMatchChallenge();
+  const challengerName = getPlayerName();
+  trackEvent("share_result", { final_score: state.score, share_mode: "challenge_url" });
   shareText(
-    shareTextConfig.resultTemplate
-      .replace("{points}", state.score)
-      .replace("{level}", difficulty.shareLabel)
-      .replace("{type}", type.label),
-    event?.currentTarget
+    challengeShareMessage(challenge, challengerName, challenge.target),
+    event?.currentTarget,
+    buildChallengeUrl(challenge, challengerName, challenge.target)
   );
 }
 
@@ -1098,9 +1538,9 @@ function pickJarramplasTarget(now) {
   const j = state.jarramplas;
   const config = difficultyConfig[state.difficulty];
   const margin = j.w * 0.76;
-  j.targetX = margin + Math.random() * Math.max(1, state.w - margin * 2);
-  j.targetY = state.h * (jarramplasMovementConfig.minYRatio + Math.random() * (jarramplasMovementConfig.maxYRatio - jarramplasMovementConfig.minYRatio));
-  j.nextMoveAt = now + 520 + Math.random() * (1150 / config.speed);
+  j.targetX = margin + randomNumber() * Math.max(1, state.w - margin * 2);
+  j.targetY = state.h * (jarramplasMovementConfig.minYRatio + randomNumber() * (jarramplasMovementConfig.maxYRatio - jarramplasMovementConfig.minYRatio));
+  j.nextMoveAt = now + 520 + randomNumber() * (1150 / config.speed);
 }
 
 function updateJarramplasMotion(now, dt) {
@@ -1148,7 +1588,7 @@ function launchMotion(from, to, owner) {
   const angle = Math.atan2(dy, dx);
 
   if (owner !== "player") {
-    const speed = 365 + Math.random() * 70;
+    const speed = 365 + randomNumber() * 70;
     return {
       power,
       pull: 1,
@@ -1345,7 +1785,7 @@ function update(now) {
     const config = difficultyConfig[state.difficulty];
     if (state.people.length < config.people && now > state.nextPersonAt) {
       spawnPerson(false);
-      state.nextPersonAt = now + 360 + Math.random() * 520;
+      state.nextPersonAt = now + 360 + randomNumber() * 520;
     }
 
     for (const person of state.people) {
@@ -1357,12 +1797,12 @@ function update(now) {
       person.y += (person.targetY - person.y) * dt * 0.55;
       updatePersonFacing(person);
       if (person.throwTimer <= 0) {
-        person.throwTimer = config.crowdThrow + Math.random() * 1.35;
+        person.throwTimer = config.crowdThrow + randomNumber() * 1.35;
         person.throwAnim = 0.42;
         person.throwT = 0;
         launchTurnip(
           { x: person.x, y: person.y - person.h * 0.55 },
-          { x: j.x + (Math.random() - 0.5) * j.w * 0.45, y: j.y + j.h * 0.38 },
+          { x: j.x + (randomNumber() - 0.5) * j.w * 0.45, y: j.y + j.h * 0.38 },
           "crowd"
         );
       }
@@ -1833,6 +2273,8 @@ trackEvent("app_loaded");
 
 playButton.addEventListener("click", () => {
   updatePlayerName(playerNameInput?.value || getPlayerName());
+  clearActiveChallenge();
+  clearChallengeUrl();
   trackEvent("menu_play_clicked");
   if (!hasSeenTutorial()) {
     state.tutorialNextScreen = "type";
@@ -1842,6 +2284,17 @@ playButton.addEventListener("click", () => {
   }
   state.mode = "type";
   showScreen("type");
+});
+document.getElementById("acceptChallengeButton").addEventListener("click", () => {
+  trackEvent("challenge_accepted", { challenge_type: state.activeChallenge?.type || "" });
+  startActiveChallenge();
+});
+document.getElementById("skipChallengeButton").addEventListener("click", () => {
+  trackEvent("challenge_skipped", { challenge_type: state.activeChallenge?.type || "" });
+  clearActiveChallenge();
+  clearChallengeUrl();
+  state.mode = "menu";
+  showScreen("start");
 });
 playerNameInput?.addEventListener("change", () => {
   updatePlayerName(playerNameInput.value);
@@ -1907,6 +2360,8 @@ document.getElementById("jarramplasBackButton").addEventListener("click", () => 
 });
 document.getElementById("playAgainButton").addEventListener("click", restartGame);
 document.getElementById("againButton").addEventListener("click", () => {
+  clearActiveChallenge();
+  clearChallengeUrl();
   trackEvent("new_game_flow_opened");
   state.mode = "type";
   showScreen("type");

@@ -84,7 +84,7 @@
       <div class="menu home-menu">
         <header class="home-brand">
           <h1>Jarramplas</h1>
-          <h2>El Juego</h2>
+          <h2>El Juego <span class="version-label" id="gameVersion">v.2.0.0</span></h2>
           <p class="tagline" id="jarramplasCountdown">-- días · --:--:--</p>
         </header>
         <div class="menu-panel">
@@ -99,7 +99,6 @@
             <button class="secondary" id="aboutButton" type="button">Acerca de</button>
             <button class="secondary" id="shareButton" type="button">Compartir</button>
           </div>
-          <p class="version-label" id="gameVersion">v.2.0.0</p>
         </div>
       </div>
     </section>
@@ -114,6 +113,22 @@
           <button type="button" data-game-type="eviction">Hasta que me echen <span>3 fallos</span></button>
         </div>
         <button class="secondary" id="typeBackButton" type="button">Volver</button>
+      </div>
+    </section>
+
+    <section class="screen" id="challenge">
+      <div class="menu">
+        <h2 id="challengeTitle">Reto abierto</h2>
+        <p class="tagline" id="challengeSubtitle">Nombre te ha retado</p>
+        <div class="record-banner" id="challengeGoal">Supera el objetivo</div>
+        <div class="tutorial challenge-copy">
+          <p id="challengeDescription">Acepta el reto y juega con las mismas condiciones.</p>
+        </div>
+        <div class="detail-list" id="challengeDetails"></div>
+        <div class="result-actions challenge-actions">
+          <button id="acceptChallengeButton" type="button">Aceptar reto</button>
+          <button class="secondary" id="skipChallengeButton" type="button">Jugar sin reto</button>
+        </div>
       </div>
     </section>
 
@@ -203,25 +218,43 @@
 
     <section class="screen" id="result">
       <div class="menu">
-        <h2>Partida finalizada</h2>
-        <div class="scoreline" id="finalScore">0</div>
+        <h2 id="finalHeadline">Partida finalizada</h2>
         <p class="tagline" id="finalMode">Tipo · Nivel</p>
-        <div class="record-banner" id="finalRecord">Récord: 0</div>
-        <div class="stats-grid">
+        <div class="result-score-card">
+          <div class="scoreline" id="finalScore">0</div>
+          <div class="record-banner" id="finalRecord">Récord: 0</div>
+          <p class="result-summary-copy" id="finalSummary">Resumen de la partida</p>
+        </div>
+        <div class="result-stage" id="finalStage">
+          <img class="result-stage-bg" id="finalScenarioImage" alt="">
+          <div class="result-stage-shade" aria-hidden="true"></div>
+          <img class="result-stage-jarramplas" id="finalJarramplasImage" alt="">
+          <div class="record-seal is-hidden" id="finalRecordSeal">Nuevo récord</div>
+          <div class="result-stage-meta">
+            <span id="finalScenarioName">Escenario</span>
+            <strong id="finalJarramplasName">Jarramplas</strong>
+          </div>
+        </div>
+        <div class="result-highlights" id="finalHighlights"></div>
+        <div class="result-bars" id="finalBreakdown"></div>
+        <div class="stats-grid result-stats-grid">
           <div class="stat-box"><strong id="finalTurnipsThrown">0</strong><span>Nabos tirados</span></div>
           <div class="stat-box"><strong id="finalTurnipsHit">0</strong><span>Nabos acertados</span></div>
           <div class="stat-box"><strong id="finalPeopleHits">0</strong><span>Personas dadas</span></div>
           <div class="stat-box"><strong id="finalAccuracy">0%</strong><span>Acierto</span></div>
         </div>
+        <div class="record-banner is-muted is-hidden" id="finalChallengeOutcome">Resultado del reto</div>
         <div class="detail-list" id="finalScoreDetail"></div>
         <div class="leaderboard-panel">
           <h3>Top 10 de este modo</h3>
           <div class="leaderboard-status" id="resultLeaderboardStatus">Guardando puntuación...</div>
           <ol class="leaderboard-list" id="resultLeaderboard"></ol>
         </div>
-        <button id="shareResultButton" type="button">Compartir puntuación</button>
-        <button id="playAgainButton" type="button">Volver a jugar</button>
-        <button class="secondary" id="againButton" type="button">Otra partida</button>
+        <div class="result-actions">
+          <button id="shareResultButton" type="button">Compartir puntuación</button>
+          <button id="playAgainButton" type="button">Repetir partida</button>
+          <button class="secondary" id="againButton" type="button">Cambiar modo</button>
+        </div>
       </div>
     </section>
   </div>

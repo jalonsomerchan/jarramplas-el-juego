@@ -75,6 +75,21 @@ test("permite navegar por el flujo básico de selección", async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
+test("abre la pantalla de reto cuando llega una URL con challenge", async ({ page }) => {
+  const consoleErrors = collectUnexpectedConsoleErrors(page);
+
+  await page.goto("/?challenge=precision&level=day20Morning&seed=12345&target=85&usuario=Jorge");
+  await expect(page.locator("#loading")).not.toBeVisible({ timeout: 25_000 });
+  await expect(page.locator("#playButton")).toHaveText(/Jugar/i, { timeout: 25_000 });
+
+  await expect(page.locator("#challenge")).toBeVisible();
+  await expect(page.locator("#challengeTitle")).toContainText(/Reto/i);
+  await expect(page.locator("#challengeGoal")).toContainText("85");
+  await expect(page.locator("#acceptChallengeButton")).toBeVisible();
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test("la pantalla de estadísticas funciona con localStorage vacío", async ({ page }) => {
   const consoleErrors = collectUnexpectedConsoleErrors(page);
 
