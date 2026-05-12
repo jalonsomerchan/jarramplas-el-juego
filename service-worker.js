@@ -1,111 +1,157 @@
-const CACHE_VERSION = "jarramplas-v20260512-1";
+importScripts("./pwa-assets.js");
+
+const {
+  CACHE_VERSION,
+  CORE_ASSETS,
+  GAMEPLAY_ASSETS,
+} = self.JARRAMPLAS_PWA_ASSETS;
+
 const CORE_CACHE = `${CACHE_VERSION}-core`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
+const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
+const CACHE_PREFIX = "jarramplas-v";
 
-const CORE_ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./asset-fallbacks.js",
-  "./game.js",
-  "./config.js",
-  "./storage.js",
-  "./leaderboard.js",
-  "./firebase-config.js",
-  "./analytics.js",
-  "./manifest.webmanifest",
-  "./assets/portada.png",
-  "./assets/icons/apple-touch-icon.png",
-  "./assets/icons/icon-192.png",
-  "./assets/icons/icon-512.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_001.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_002.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_003.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_004.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_005.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_006.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_007.png",
-  "./assets/jarramplas/snes_tamboril_front_8f_hd/frame_008.png",
-  "./assets/personajes/frames/persona1/1.png",
-  "./assets/personajes/frames/persona1/2.png",
-  "./assets/personajes/frames/persona1/3.png",
-  "./assets/personajes/frames/persona1/4.png",
-  "./assets/personajes/frames/persona1/5.png",
-  "./assets/personajes/frames/persona1/6.png",
-  "./assets/fondos/ayuntamiento.png"
-];
+async function addAllSettled(cacheName, assets) {
+  const cache = await caches.open(cacheName);
+  const results = await Promise.allSettled(
+    assets.map(async (asset) => {
+      const request = new Request(asset, { cache: "reload" });
+      const response = await fetch(request);
+      if (!response || !response.ok) {
+        throw new Error(`No se pudo cachear ${asset}: ${response?.status || "sin respuesta"}`);
+      }
+      await cache.put(asset, response);
+      return asset;
+    })
+  );
+
+  const failed = results
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason?.message || String(result.reason));
+
+  if (failed.length) {
+    console.warn("[Jarramplas SW] Algunos assets no se pudieron cachear.", failed);
+  }
+
+  return { ok: results.length - failed.length, failed };
+}
+
+async function notifyClients(message) {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  clients.forEach((client) => client.postMessage(message));
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CORE_CACHE)
-      .then((cache) => cache.addAll(CORE_ASSETS))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    await addAllSettled(CORE_CACHE, CORE_ASSETS);
+    self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys
-          .filter((key) => key.startsWith("jarramplas-") && !key.startsWith(CACHE_VERSION))
-          .map((key) => caches.delete(key))
-      ))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => key.startsWith(CACHE_PREFIX) && !key.startsWith(CACHE_VERSION))
+        .map((key) => caches.delete(key))
+    );
+    await self.clients.claim();
+    notifyClients({ type: "JARRAMPLAS_SW_READY", version: CACHE_VERSION });
+    event.waitUntil(addAllSettled(ASSET_CACHE, GAMEPLAY_ASSETS));
+  })());
 });
 
 function isLocalRequest(request) {
   return new URL(request.url).origin === self.location.origin;
 }
 
-function shouldRuntimeCache(request) {
-  const { pathname } = new URL(request.url);
-  return pathname.endsWith(".png")
+function cleanRequest(request) {
+  const url = new URL(request.url);
+  url.search = "";
+  return new Request(url.toString(), {
+    method: request.method,
+    headers: request.headers,
+    mode: request.mode === "navigate" ? "same-origin" : request.mode,
+    credentials: request.credentials,
+    redirect: request.redirect,
+    referrer: request.referrer,
+  });
+}
+
+function requestPathname(request) {
+  return new URL(request.url).pathname;
+}
+
+function isStaticAsset(request) {
+  const pathname = requestPathname(request);
+  return pathname.endsWith(".js")
+    || pathname.endsWith(".css")
     || pathname.endsWith(".webmanifest");
 }
 
-function shouldNetworkFirstAsset(request) {
-  const { pathname } = new URL(request.url);
-  return pathname.endsWith(".css") || pathname.endsWith(".js");
+function isRuntimeAsset(request) {
+  const pathname = requestPathname(request);
+  return pathname.endsWith(".png")
+    || pathname.endsWith(".jpg")
+    || pathname.endsWith(".jpeg")
+    || pathname.endsWith(".webp")
+    || pathname.endsWith(".gif")
+    || pathname.endsWith(".svg");
 }
 
-async function cacheFirst(request) {
-  const cached = await caches.match(request, { ignoreSearch: true });
-  if (cached) return cached;
+async function putIfOk(cacheName, request, response) {
+  if (!response || !response.ok) return;
+  const cache = await caches.open(cacheName);
+  await cache.put(cleanRequest(request), response.clone());
+}
 
-  const response = await fetch(request);
-  if (response && response.ok) {
-    const cache = await caches.open(ASSET_CACHE);
-    cache.put(request, response.clone());
-  }
-  return response;
+async function matchAny(request) {
+  const clean = cleanRequest(request);
+  return caches.match(clean, { ignoreSearch: true })
+    || caches.match(request, { ignoreSearch: true });
 }
 
 async function networkFirstPage(request) {
   try {
     const response = await fetch(request);
-    if (response && response.ok) {
-      const cache = await caches.open(CORE_CACHE);
-      cache.put("./index.html", response.clone());
-    }
+    await putIfOk(CORE_CACHE, "./index.html", response);
     return response;
   } catch {
-    return caches.match("./index.html");
+    return matchAny("./index.html");
   }
 }
 
-async function networkFirstAsset(request) {
+async function networkFirstStaticAsset(request) {
   try {
-    const response = await fetch(request);
-    if (response && response.ok) {
-      const cache = await caches.open(ASSET_CACHE);
-      cache.put(request, response.clone());
-    }
+    const clean = cleanRequest(request);
+    const response = await fetch(clean, { cache: "no-cache" });
+    await putIfOk(CORE_CACHE, request, response);
     return response;
   } catch {
-    return caches.match(request, { ignoreSearch: true });
+    return matchAny(request);
   }
+}
+
+async function staleWhileRevalidateAsset(request) {
+  const cached = await matchAny(request);
+  const refresh = fetch(cleanRequest(request))
+    .then(async (response) => {
+      await putIfOk(ASSET_CACHE, request, response);
+      return response;
+    })
+    .catch(() => null);
+
+  return cached || refresh || fetch(request);
+}
+
+async function cacheFirstRuntime(request) {
+  const cached = await matchAny(request);
+  if (cached) return cached;
+
+  const response = await fetch(cleanRequest(request));
+  await putIfOk(RUNTIME_CACHE, request, response);
+  return response;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -117,12 +163,21 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (shouldNetworkFirstAsset(request)) {
-    event.respondWith(networkFirstAsset(request));
+  if (isStaticAsset(request)) {
+    event.respondWith(networkFirstStaticAsset(request));
     return;
   }
 
-  if (shouldRuntimeCache(request)) {
-    event.respondWith(cacheFirst(request));
+  if (isRuntimeAsset(request)) {
+    event.respondWith(staleWhileRevalidateAsset(request));
+    return;
+  }
+
+  event.respondWith(cacheFirstRuntime(request));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "JARRAMPLAS_SKIP_WAITING") {
+    self.skipWaiting();
   }
 });
