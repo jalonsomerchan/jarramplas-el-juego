@@ -26,6 +26,25 @@ async function waitForHomeReady(page) {
   await expect(page.locator("#playButton")).toHaveText(/Jugar/i, { timeout: 25_000 });
 }
 
+async function visibleGameScreen(page) {
+  return page.evaluate(() => {
+    if (document.querySelector("#type")?.classList.contains("is-visible")) return "type";
+    if (document.querySelector("#tutorial")?.classList.contains("is-visible")) return "tutorial";
+    return "";
+  });
+}
+
+async function openGameTypeScreen(page) {
+  await page.locator("#playButton").click();
+  await expect.poll(() => visibleGameScreen(page), { timeout: 10_000 }).toMatch(/^(type|tutorial)$/);
+
+  if (await page.locator("#tutorial").isVisible()) {
+    await page.locator("#tutorialButton").click();
+  }
+
+  await expect(page.locator("#type")).toBeVisible();
+}
+
 test("carga la pantalla inicial sin errores críticos", async ({ page }) => {
   const consoleErrors = collectUnexpectedConsoleErrors(page);
 
@@ -44,8 +63,7 @@ test("permite navegar por el flujo básico de selección", async ({ page }) => {
   await page.goto("/");
   await waitForHomeReady(page);
 
-  await page.locator("#playButton").click();
-  await expect(page.locator("#type")).toBeVisible();
+  await openGameTypeScreen(page);
 
   await page.locator("[data-game-type='timed']").click();
   await expect(page.locator("#select")).toBeVisible();
