@@ -9,6 +9,7 @@
     "./",
     "./index.html",
     "./styles.css",
+    "./pwa-assets.js",
     "./asset-fallbacks.js",
     "./game.js",
     "./config.js",
